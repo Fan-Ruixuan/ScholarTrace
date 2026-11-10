@@ -16,6 +16,7 @@ export interface AgentNode {
   retryCount?: number;
   output?: string;
   recordIds?: string[];
+  logs?: string[]; // 执行日志
 }
 
 export interface Plan {

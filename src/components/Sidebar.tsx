@@ -1,193 +1,155 @@
 'use client';
 
 import { useState } from 'react';
-import {
-  MessageSquare,
-  BookOpen,
-  Database,
-  FileText,
-  Settings,
-  Plus,
-  Search,
-  ChevronLeft,
-  ChevronRight,
-  FlaskConical,
-} from 'lucide-react';
+import { Plus, Search, FileText, Database, BookOpen, Shield, FolderOpen, ChevronDown, Sparkles, History } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-interface SidebarProps {
-  conversations: Array<{
-    id: string;
-    title: string;
-    updatedAt: number;
-  }>;
-  activeConversationId?: string;
-  onNewChat: () => void;
-  onSelectConversation: (id: string) => void;
+interface Conversation {
+  id: string;
+  title: string;
+  updatedAt: number;
 }
 
-type NavItem = {
-  id: string;
-  icon: React.ReactNode;
-  label: string;
-  badge?: string;
-};
+interface SidebarProps {
+  conversations: Conversation[];
+  activeId: string;
+  onSelect: (id: string) => void;
+  onNewChat: () => void;
+}
 
-export function Sidebar({
-  conversations,
-  activeConversationId,
-  onNewChat,
-  onSelectConversation,
-}: SidebarProps) {
-  const [collapsed, setCollapsed] = useState(false);
-  const [activeNav, setActiveNav] = useState('chat');
-  const [searchQuery, setSearchQuery] = useState('');
-
-  const navItems: NavItem[] = [
-    { id: 'chat', icon: <MessageSquare className="w-5 h-5" />, label: '对话工作台' },
-    { id: 'literature', icon: <BookOpen className="w-5 h-5" />, label: 'L1 原始文献库', badge: 'L1' },
-    { id: 'knowledge', icon: <Database className="w-5 h-5" />, label: 'L2 结构化库', badge: 'L2' },
-    { id: 'rules', icon: <FileText className="w-5 h-5" />, label: 'L3 规则库', badge: 'L3' },
-    { id: 'experiments', icon: <FlaskConical className="w-5 h-5" />, label: '实验数据' },
-    { id: 'settings', icon: <Settings className="w-5 h-5" />, label: '设置' },
-  ];
-
-  const filteredConversations = conversations.filter(c =>
-    c.title.toLowerCase().includes(searchQuery.toLowerCase()),
-  );
+export function Sidebar({ conversations, activeId, onSelect, onNewChat }: SidebarProps) {
+  const [kbExpanded, setKbExpanded] = useState(true);
 
   return (
-    <div
-      className={cn(
-        'h-full bg-slate-900 text-slate-300 flex flex-col transition-all duration-200 relative',
-        collapsed ? 'w-16' : 'w-[260px]',
-      )}
-    >
-      {/* Logo区域 */}
-      <div className="h-16 flex items-center px-4 border-b border-slate-800">
-        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center flex-shrink-0">
-          <span className="text-white font-bold text-sm">溯</span>
-        </div>
-        {!collapsed && (
-          <div className="ml-3 overflow-hidden">
-            <h1 className="text-white font-semibold text-sm truncate">溯研</h1>
-            <p className="text-xs text-slate-500 truncate">多智能体科研协作</p>
+    <aside className="w-[260px] flex-shrink-0 border-r border-slate-800/50 bg-slate-950/80 backdrop-blur-xl flex flex-col">
+      {/* Logo 区域 */}
+      <div className="p-4 border-b border-slate-800/50">
+        <button
+          onClick={onNewChat}
+          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-sm font-medium shadow-lg shadow-blue-500/20 transition-all hover:shadow-blue-500/30 hover:scale-[1.02] active:scale-[0.98]"
+        >
+          <Plus className="w-4 h-4" />
+          新建科研任务
+        </button>
+      </div>
+
+      {/* 三层知识库导航 */}
+      <div className="px-3 py-3 border-b border-slate-800/50">
+        <button
+          onClick={() => setKbExpanded(!kbExpanded)}
+          className="flex items-center gap-2 w-full text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 hover:text-slate-300 transition-colors"
+        >
+          <FolderOpen className="w-3.5 h-3.5" />
+          知识库
+          <ChevronDown className={cn('w-3.5 h-3.5 ml-auto transition-transform', kbExpanded ? '' : '-rotate-90')} />
+        </button>
+
+        {kbExpanded && (
+          <div className="space-y-1">
+            <KBItem
+              icon={<FileText className="w-3.5 h-3.5" />}
+              color="text-slate-300"
+              bgColor="bg-slate-700/40"
+              label="L1 原始文献库"
+              desc="PDF原文·只读底账"
+              docCount={12}
+            />
+            <KBItem
+              icon={<Database className="w-3.5 h-3.5" />}
+              color="text-cyan-300"
+              bgColor="bg-cyan-500/10"
+              label="L2 结构化库"
+              desc="摘要·参数·指标"
+              docCount={48}
+            />
+            <KBItem
+              icon={<Shield className="w-3.5 h-3.5" />}
+              color="text-amber-300"
+              bgColor="bg-amber-500/10"
+              label="L3 规则校验库"
+              desc="规范·模板·错误范式"
+              docCount={8}
+            />
           </div>
         )}
       </div>
 
-      {/* 新建对话按钮 */}
-      <div className="p-3">
-        <button
-          onClick={onNewChat}
-          className={cn(
-            'w-full flex items-center gap-2 px-3 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium transition-colors',
-            collapsed && 'justify-center px-2',
-          )}
-        >
-          <Plus className="w-4 h-4 flex-shrink-0" />
-          {!collapsed && <span>新建科研任务</span>}
-        </button>
+      {/* 历史会话 */}
+      <div className="flex-1 overflow-y-auto custom-scrollbar px-3 py-3">
+        <div className="flex items-center gap-2 text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 px-1">
+          <History className="w-3.5 h-3.5" />
+          历史任务
+        </div>
+
+        <div className="relative mb-3">
+          <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
+          <input
+            type="text"
+            placeholder="搜索任务..."
+            className="w-full pl-8 pr-3 py-1.5 bg-slate-800/40 border border-slate-700/50 rounded-lg text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-blue-500/50 focus:bg-slate-800/70 transition-all"
+          />
+        </div>
+
+        <div className="space-y-0.5">
+          {conversations.map((conv) => (
+            <button
+              key={conv.id}
+              onClick={() => onSelect(conv.id)}
+              className={cn(
+                'w-full text-left px-3 py-2 rounded-lg text-sm transition-all',
+                activeId === conv.id
+                  ? 'bg-blue-600/20 text-blue-200 border border-blue-500/30'
+                  : 'text-slate-400 hover:bg-slate-800/50 hover:text-slate-200 border border-transparent'
+              )}
+            >
+              <div className="flex items-center gap-2">
+                <BookOpen className="w-3.5 h-3.5 flex-shrink-0" />
+                <span className="truncate font-medium">{conv.title}</span>
+              </div>
+              <div className="text-[10px] text-slate-500 mt-0.5 ml-5.5 pl-0.5">
+                {new Date(conv.updatedAt).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })}
+              </div>
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* 导航菜单 */}
-      <nav className="px-2 space-y-0.5">
-        {navItems.map(item => (
-          <button
-            key={item.id}
-            onClick={() => setActiveNav(item.id)}
-            className={cn(
-              'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors',
-              activeNav === item.id
-                ? 'bg-slate-800 text-white'
-                : 'text-slate-400 hover:bg-slate-800/50 hover:text-slate-200',
-              collapsed && 'justify-center px-2',
-            )}
-          >
-            <span className="flex-shrink-0">{item.icon}</span>
-            {!collapsed && (
-              <>
-                <span className="flex-1 text-left truncate">{item.label}</span>
-                {item.badge && (
-                  <span className="text-xs px-1.5 py-0.5 rounded bg-slate-700 text-slate-400">
-                    {item.badge}
-                  </span>
-                )}
-              </>
-            )}
-          </button>
-        ))}
-      </nav>
-
-      {/* 历史对话列表 */}
-      {!collapsed && (
-        <div className="flex-1 overflow-hidden flex flex-col mt-4">
-          <div className="px-4 mb-2">
-            <h3 className="text-xs font-medium text-slate-500 uppercase tracking-wider">
-              历史会话
-            </h3>
+      {/* 底部：版本信息 */}
+      <div className="p-3 border-t border-slate-800/50">
+        <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-slate-800/30">
+          <div className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center flex-shrink-0">
+            <Sparkles className="w-3.5 h-3.5 text-white" />
           </div>
-
-          {conversations.length > 0 && (
-            <div className="px-3 mb-2">
-              <div className="relative">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
-                  placeholder="搜索会话..."
-                  className="w-full pl-8 pr-3 py-1.5 text-sm bg-slate-800/50 border border-slate-700/50 rounded-md text-slate-300 placeholder-slate-500 focus:outline-none focus:border-slate-600"
-                />
-              </div>
-            </div>
-          )}
-
-          <div className="flex-1 overflow-y-auto px-2 space-y-0.5">
-            {filteredConversations.map(conv => (
-              <button
-                key={conv.id}
-                onClick={() => onSelectConversation(conv.id)}
-                className={cn(
-                  'w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-left transition-colors',
-                  activeConversationId === conv.id
-                    ? 'bg-blue-600/20 text-blue-400 border border-blue-600/30'
-                    : 'text-slate-400 hover:bg-slate-800/50 hover:text-slate-200',
-                )}
-              >
-                <MessageSquare className="w-4 h-4 flex-shrink-0" />
-                <span className="flex-1 truncate">{conv.title}</span>
-              </button>
-            ))}
-            {filteredConversations.length === 0 && searchQuery && (
-              <p className="text-xs text-slate-600 px-3 py-2">无匹配会话</p>
-            )}
+          <div className="min-w-0">
+            <div className="text-xs font-medium text-slate-200 truncate">溯研 Suyan v1.0</div>
+            <div className="text-[10px] text-slate-500">多智能体·可溯源·防幻觉</div>
           </div>
         </div>
-      )}
+      </div>
+    </aside>
+  );
+}
 
-      {/* 用户信息 */}
-      {!collapsed && (
-        <div className="p-3 border-t border-slate-800">
-          <div className="flex items-center gap-2 px-2 py-2">
-            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center text-white text-xs font-medium">
-              研
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm text-white truncate">科研工作者</p>
-              <p className="text-xs text-slate-500 truncate">高校实验室</p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 折叠按钮 */}
-      <button
-        onClick={() => setCollapsed(!collapsed)}
-        className="absolute -right-3 top-20 w-6 h-6 rounded-full bg-slate-700 border border-slate-600 flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-600 transition-colors z-10"
-      >
-        {collapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronLeft className="w-3.5 h-3.5" />}
-      </button>
-    </div>
+function KBItem({
+  icon, color, bgColor, label, desc, docCount,
+}: {
+  icon: React.ReactNode;
+  color: string;
+  bgColor: string;
+  label: string;
+  desc: string;
+  docCount: number;
+}) {
+  return (
+    <button className="w-full flex items-center gap-2.5 px-2 py-2 rounded-lg hover:bg-slate-800/50 transition-colors group">
+      <div className={cn('w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0', bgColor, color)}>
+        {icon}
+      </div>
+      <div className="flex-1 min-w-0 text-left">
+        <div className={cn('text-xs font-medium', color)}>{label}</div>
+        <div className="text-[10px] text-slate-500 truncate">{desc}</div>
+      </div>
+      <span className="text-[10px] text-slate-500 font-mono">{docCount}</span>
+    </button>
   );
 }

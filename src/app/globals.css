@@ -92,10 +92,13 @@
 
 html, body {
   height: 100%;
+  width: 100%;
   font-family: var(--font-sans);
+  background: #0a0e1a;
+  color: #e2e8f0;
 }
 
-/* 自定义滚动条 */
+/* 自定义滚动条 - 深色主题 */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -104,11 +107,14 @@ html, body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: rgba(148, 163, 184, 0.2);
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: rgba(148, 163, 184, 0.4);
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.15);
 }
 
 /* 节点脉冲动画 */
@@ -118,6 +124,32 @@ html, body {
 }
 .node-pulse {
   animation: nodePulse 1.5s ease-in-out infinite;
+}
+
+@keyframes glowPulse {
+  0%, 100% { box-shadow: 0 0 8px rgba(59, 130, 246, 0.3); }
+  50% { box-shadow: 0 0 20px rgba(59, 130, 246, 0.6); }
+}
+.animate-glow-pulse {
+  animation: glowPulse 2s ease-in-out infinite;
+}
+
+@keyframes pulseSlow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+.animate-pulse-slow {
+  animation: pulseSlow 3s ease-in-out infinite;
+}
+
+/* 渐变背景动画 */
+@keyframes gradientShift {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+.gradient-animated {
+  background-size: 200% 200%;
+  animation: gradientShift 8s ease infinite;
 }
 
 /* 数据流连线动画 */
@@ -144,11 +176,11 @@ html, body {
   color: var(--primary);
 }
 
-/* Markdown 内容样式 */
+/* Markdown 内容样式 - 深色主题适配 */
 .markdown-content {
   line-height: 1.75;
   font-size: 14px;
-  color: #1e293b;
+  color: #e2e8f0;
 }
 .markdown-content h1,
 .markdown-content h2,
@@ -157,6 +189,7 @@ html, body {
   margin-top: 1.5em;
   margin-bottom: 0.5em;
   line-height: 1.4;
+  color: #f1f5f9;
 }
 .markdown-content h1 { font-size: 1.5em; }
 .markdown-content h2 { font-size: 1.25em; }
@@ -174,32 +207,34 @@ html, body {
 }
 .markdown-content code {
   font-family: var(--font-mono);
-  background: #f1f5f9;
+  background: rgba(30, 41, 59, 0.8);
   padding: 2px 6px;
   border-radius: 4px;
   font-size: 0.9em;
-  color: #be185d;
+  color: #a5b4fc;
+  border: 1px solid rgba(148, 163, 184, 0.1);
 }
 .markdown-content pre {
-  background: #1e293b;
+  background: #0f172a;
   color: #e2e8f0;
   padding: 1em;
   border-radius: 8px;
   overflow-x: auto;
   margin: 1em 0;
+  border: 1px solid rgba(148, 163, 184, 0.1);
 }
 .markdown-content pre code {
   background: transparent;
   color: inherit;
   padding: 0;
+  border: none;
 }
 .markdown-content blockquote {
   border-left: 3px solid #3b82f6;
-  padding-left: 1em;
+  padding: 0.5em 1em;
   margin: 1em 0;
-  color: #64748b;
-  background: #f8fafc;
-  padding: 0.75em 1em;
+  color: #94a3b8;
+  background: rgba(59, 130, 246, 0.05);
   border-radius: 0 6px 6px 0;
 }
 .markdown-content table {

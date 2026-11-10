@@ -1,29 +1,18 @@
 'use client';
 
 import { useState } from 'react';
-import { X, FileText, Download, Copy, Check, BookOpen, FileDown } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { X, Copy, Check, BookOpen, Download } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Citation } from '@/lib/types';
-import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogClose,
-} from '@/components/ui/dialog';
 
 interface ReportViewerProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
   content: string;
-  title?: string;
   citations?: Citation[];
+  onClose: () => void;
 }
 
-export function ReportViewer({ open, onOpenChange, content, title = '研究报告', citations }: ReportViewerProps) {
+export function ReportViewer({ content, citations, onClose }: ReportViewerProps) {
   const [copied, setCopied] = useState(false);
 
   const copyReport = () => {
@@ -32,115 +21,96 @@ export function ReportViewer({ open, onOpenChange, content, title = '研究报�
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const downloadMarkdown = () => {
-    const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
+  const downloadReport = () => {
+    const blob = new Blob([content], { type: 'text/markdown' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${title.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.md`;
-    document.body.appendChild(a);
+    a.download = `溯研报告_${new Date().toLocaleDateString('zh-CN')}.md`;
     a.click();
-    document.body.removeChild(a);
     URL.revokeObjectURL(url);
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl h-[85vh] flex flex-col p-0 gap-0 overflow-hidden">
-        <DialogHeader className="px-6 py-4 border-b border-slate-200 flex flex-row items-center justify-between flex-shrink-0">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+      <div className="bg-slate-900 border border-slate-700/50 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
+        {/* 头部 */}
+        <div className="flex items-center justify-between p-5 border-b border-slate-800 bg-gradient-to-r from-blue-600/10 to-indigo-600/10">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-amber-100 flex items-center justify-center">
-              <FileText className="w-5 h-5 text-amber-600" />
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/30">
+              <BookOpen className="w-5 h-5 text-white" />
             </div>
             <div>
-              <DialogTitle className="text-base font-semibold text-slate-800">{title}</DialogTitle>
-              <p className="text-xs text-slate-500 mt-0.5">
-                溯研 · 多智能体协作生成 · {new Date().toLocaleDateString('zh-CN')}
+              <h2 className="text-lg font-bold text-slate-100">研究报告</h2>
+              <p className="text-xs text-slate-400">
+                生成时间：{new Date().toLocaleString('zh-CN')}
+                {citations && citations.length > 0 && ` · ${citations.length}条来源引用`}
               </p>
             </div>
           </div>
+
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" className="h-8 text-xs" onClick={copyReport}>
-              {copied ? <Check className="w-3.5 h-3.5 mr-1 text-green-500" /> : <Copy className="w-3.5 h-3.5 mr-1" />}
-              {copied ? '已复制' : '复制全文'}
-            </Button>
-            <Button size="sm" className="h-8 text-xs bg-amber-600 hover:bg-amber-700" onClick={downloadMarkdown}>
-              <Download className="w-3.5 h-3.5 mr-1" />
+            <button
+              onClick={copyReport}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs transition-colors"
+            >
+              {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+              {copied ? '已复制' : '复制'}
+            </button>
+            <button
+              onClick={downloadReport}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs transition-colors"
+            >
+              <Download className="w-3.5 h-3.5" />
               下载 MD
-            </Button>
-            <DialogClose asChild>
-              <Button variant="ghost" size="icon" className="h-8 w-8">
-                <X className="w-4 h-4" />
-              </Button>
-            </DialogClose>
+            </button>
+            <button
+              onClick={onClose}
+              className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
           </div>
-        </DialogHeader>
+        </div>
 
-        <div className="flex-1 overflow-y-auto bg-slate-50 p-8">
-          <div className="max-w-3xl mx-auto bg-white shadow-sm border border-slate-200 rounded-lg p-10">
-            {/* 报告头部 */}
-            <div className="text-center mb-8 pb-6 border-b border-slate-200">
-              <h1 className="text-2xl font-bold text-slate-900 mb-2">{title}</h1>
-              <div className="flex items-center justify-center gap-2 text-xs text-slate-500">
-                <span>溯研·多智能体科研协作平台生成</span>
-                <span>·</span>
-                <span>{new Date().toLocaleDateString('zh-CN')}</span>
-              </div>
-            </div>
-
-            <article className="markdown-content" style={{ fontSize: '15px', lineHeight: '1.8' }}>
+        {/* 报告内容 */}
+        <div className="flex-1 overflow-y-auto custom-scrollbar p-6 bg-slate-950/50">
+          <div className="max-w-3xl mx-auto">
+            <div className="markdown-content prose prose-invert max-w-none bg-slate-900/50 border border-slate-800/50 rounded-xl p-6 shadow-lg">
               <ReactMarkdown remarkPlugins={[remarkGfm]}>
                 {content}
               </ReactMarkdown>
-            </article>
+            </div>
 
-            {/* 引用索引表 */}
+            {/* 引用索引 */}
             {citations && citations.length > 0 && (
-              <div className="mt-10 pt-6 border-t-2 border-slate-300">
-                <h2 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
-                  <BookOpen className="w-5 h-5 text-blue-600" />
+              <div className="mt-6 bg-slate-900/50 border border-slate-800/50 rounded-xl p-5">
+                <h3 className="text-sm font-bold text-slate-200 mb-3 flex items-center gap-2">
+                  <BookOpen className="w-4 h-4 text-blue-400" />
                   参考文献索引
-                </h2>
-                <ol className="space-y-2 text-sm text-slate-700 list-decimal list-inside">
+                </h3>
+                <div className="space-y-2">
                   {citations.map((cite, idx) => (
-                    <li key={cite.id} className="pl-1">
-                      <span className="font-medium">{cite.docName}</span>
-                      <span className="text-slate-500 ml-2">第 {cite.page} 页</span>
-                    </li>
+                    <div key={cite.id} className="flex items-start gap-2 text-xs p-2 rounded-lg bg-slate-800/40">
+                      <span className="flex-shrink-0 w-5 h-5 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center text-[10px] font-bold">
+                        {idx + 1}
+                      </span>
+                      <div className="flex-1">
+                        <span className="text-slate-300 font-medium">{cite.docName}</span>
+                        <span className="text-slate-500 mx-1">·</span>
+                        <span className="text-slate-400">第 {cite.page} 页</span>
+                      </div>
+                    </div>
                   ))}
-                </ol>
+                </div>
+                <p className="text-[10px] text-slate-500 mt-3 border-t border-slate-800 pt-2">
+                  ⓘ 溯研平台溯源机制：所有结论均可通过引用指针对应到原始文献L1库具体位置，有效防止科研场景下的大模型幻觉。
+                </p>
               </div>
             )}
-
-            {/* 生成声明 */}
-            <div className="mt-8 p-4 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
-              <p className="font-medium mb-1">⚠️ 学术使用声明</p>
-              <p className="leading-relaxed text-amber-700">
-                本报告由溯研多智能体系统自动生成，所有引用均已标注来源。请在使用前仔细核对原文数据，
-                系统不保证100%准确性，最终学术责任由使用者承担。
-              </p>
-            </div>
           </div>
         </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// 简化版报告导出按钮
-export function ReportButton({ onClick, disabled, className }: {
-  onClick: () => void;
-  disabled?: boolean;
-  className?: string;
-}) {
-  return (
-    <Button
-      onClick={onClick}
-      disabled={disabled}
-      className={cn('bg-amber-600 hover:bg-amber-700', className)}
-    >
-      <FileDown className="w-4 h-4 mr-1.5" />
-      查看/导出报告
-    </Button>
+      </div>
+    </div>
   );
 }
