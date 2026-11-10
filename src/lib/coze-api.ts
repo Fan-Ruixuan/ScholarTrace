@@ -450,6 +450,23 @@ async function executeCheck(
 
 // ============ 主编排入口 ============
 
+// 对外暴露的主编排对话函数（别名：runOrchestrator）
+export async function orchestratorChat(
+  message: string,
+  fileIds: string[],
+  onEvent: (event: OrchestratorEvent) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const files = fileIds.map(id => ({ id, name: id }));
+  const stream = runOrchestrator({ message, files, signal });
+  const reader = stream.getReader();
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    onEvent(value);
+  }
+}
+
 export function runOrchestrator(options: OrchestratorOptions): ReadableStream<OrchestratorEvent> {
   const { message, files, signal } = options;
 
@@ -552,6 +569,11 @@ export function runOrchestrator(options: OrchestratorOptions): ReadableStream<Or
             reportId = reportResult.reportId;
             allCitations = reportResult.citations;
             allRecordIds.push(reportId);
+
+            // 报告正文推送到对话流（在合规校验与执行摘要之前展示）
+            if (reportText && reportText.trim()) {
+              emit({ type: 'message.delta', content: `\n\n## 📄 报告初稿\n\n${reportText}\n` });
+            }
           }
 
           if (plan.tasks.some(t => t.agent === 'check') || plan.intent === 'full_pipeline') {

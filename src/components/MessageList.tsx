@@ -1,133 +1,410 @@
 'use client';
 
+import { useState, useRef, useEffect, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Bot, User, AlertTriangle, CheckCircle2, XCircle, Sparkles } from 'lucide-react';
-import { useEffect, useRef } from 'react';
+import { User, Bot, FileText, AlertTriangle, CheckCircle2, XCircle, X, ChevronDown, ChevronRight, Search, ClipboardCopy } from 'lucide-react';
+import type { Message, Citation, WorkflowResult } from '@/lib/types';
+import { AGENT_CONFIGS } from '@/lib/agent-config';
 
-export type Citation = {
-  id: string;
-  docId: string;
-  page?: string;
-  snippet?: string;
-};
-
-export type Message = {
-  id: string;
-  role: 'user' | 'assistant';
-  content: string;
-  citations?: Citation[];
-  exceptions?: string[];
-  checkResult?: { passed: boolean; issues?: string[]; retryCount?: number };
-  streaming?: boolean;
-};
-
-type MessageListProps = {
+interface MessageListProps {
   messages: Message[];
-  isGenerating: boolean;
-};
-
-// 预处理文本，将【来源:xxx】转为[数字]引用标注
-function processContent(content: string, citations: Citation[] = []) {
-  let processed = content;
-  const sourceRegex = /【来源:\s*doc_id=([^,，\s】]+)[,，\s]*page=([^,，\s】]+)[,，\s]*([^】]*)?】/g;
-  let match;
-  const foundCitations: Citation[] = [...citations];
-  let idx = citations.length;
-
-  while ((match = sourceRegex.exec(content)) !== null) {
-    const docId = match[1];
-    const page = match[2];
-    const existingIdx = foundCitations.findIndex((c) => c.docId === docId && c.page === page);
-    let citeNum: number;
-    if (existingIdx >= 0) {
-      citeNum = existingIdx + 1;
-    } else {
-      idx++;
-      citeNum = idx;
-      foundCitations.push({ id: `c${citeNum}`, docId, page });
-    }
-    processed = processed.replace(match[0], `<sup class="citation-mark">[${citeNum}]</sup>`);
-  }
-
-  return { processed, allCitations: foundCitations };
+  isStreaming: boolean;
+  streamingContent: string;
+  onCitationClick: (citationId: string | null) => void;
+  activeCitation: string | null;
+  citationMap: Map<string, Citation>;
+  onCopyReport?: (content: string) => void;
 }
 
-export function MessageList({ messages, isGenerating }: MessageListProps) {
-  const bottomRef = useRef<HTMLDivElement>(null);
+function AgentAvatar({ agent = 'orchestrator' }: { agent?: string }) {
+  return (
+    <div className="message-avatar agent">
+      <Bot size={14} />
+    </div>
+  );
+}
+
+function UserAvatar() {
+  return (
+    <div className="message-avatar user">
+      <User size={14} />
+    </div>
+  );
+}
+
+// 引用标记渲染
+function CitationMark({
+  index,
+  citationId,
+  isActive,
+  onClick,
+}: {
+  index: number;
+  citationId: string;
+  isActive: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <span
+      className={`citation-mark ${isActive ? 'active' : ''}`}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      title={`查看来源 [${index}]`}
+    >
+      [{index}]
+    </span>
+  );
+}
+
+// 显微镜溯源浮窗
+function CitationPopup({
+  citation,
+  position,
+  onClose,
+}: {
+  citation: Citation;
+  position: { top: number; left: number };
+  onClose: () => void;
+}) {
+  const popupRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isGenerating]);
+    const handleClick = (e: MouseEvent) => {
+      if (popupRef.current && !popupRef.current.contains(e.target as Node)) {
+        onClose();
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [onClose]);
 
-  if (messages.length === 0) {
+  return (
+    <div
+      ref={popupRef}
+      className="citation-popup"
+      style={{ top: position.top, left: position.left }}
+    >
+      <div className="citation-popup-header">
+        <div className="citation-popup-title">
+          <Search size={12} color="var(--brand)" />
+          来源溯源 · [{citation.index}]
+        </div>
+        <button className="citation-popup-close" onClick={onClose}>
+          <X size={14} />
+        </button>
+      </div>
+      <div className="citation-section">
+        <div className="citation-section-label">
+          <ClipboardCopy size={10} style={{ display: 'inline', verticalAlign: -1, marginRight: 4 }} />
+          原始片段
+        </div>
+        <div className="citation-section-content">
+          {citation.snippet || `文献 ${citation.docId} 第 ${citation.page} 页原始内容片段`}
+        </div>
+      </div>
+      <div className="citation-section">
+        <div className="citation-section-label">
+          <FileText size={10} style={{ display: 'inline', verticalAlign: -1, marginRight: 4 }} />
+          结构化摘要
+        </div>
+        <div className="citation-section-content summary">
+          {citation.snippet ? `解析自文献 ${citation.docId}，第 ${citation.page} 页，已写入L2结构化知识库` : `record_id: ${citation.docId}-p${citation.page}`}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// 异常/结果卡片
+function ResultCards({ result }: { result: WorkflowResult }) {
+  if (result.type === 'data') {
+    const exceptionList: string[] = result.data.exceptionList || [];
     return (
-      <div className="messages-container">
+      <div className="result-card warning">
+        <div className="result-card-title" style={{ color: 'var(--warning)' }}>
+          <AlertTriangle size={13} />
+          数据清洗完成 · {exceptionList.length} 处异常已标注
+        </div>
+        {exceptionList.length > 0 && exceptionList.length <= 5 && (
+          <ul className="result-card-list">
+            {exceptionList.slice(0, 5).map((e, i) => <li key={i}>{e}</li>)}
+          </ul>
+        )}
+        {exceptionList.length > 5 && (
+          <ul className="result-card-list">
+            {exceptionList.slice(0, 3).map((e, i) => <li key={i}>{e}</li>)}
+            <li>... 等 {exceptionList.length} 处异常</li>
+          </ul>
+        )}
+        {result.data.recordId && (
+          <div style={{ marginTop: 6, fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'JetBrains Mono, monospace' }}>
+            record_id: {result.data.recordId}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  if (result.type === 'check') {
+    const passed = result.data.passed;
+    return (
+      <div className={`result-card ${passed ? 'success' : 'error'}`}>
+        <div className="result-card-title" style={{ color: passed ? 'var(--success)' : 'var(--error)' }}>
+          {passed ? <CheckCircle2 size={13} /> : <XCircle size={13} />}
+          合规校验 · {passed ? '通过' : '未通过'}
+          {!passed && result.data.issueList && ` · ${result.data.issueList.length} 处问题`}
+        </div>
+        {result.data.issueList && result.data.issueList.length > 0 && (
+          <ul className="result-card-list">
+            {result.data.issueList.slice(0, 3).map((issue, i) => <li key={i}>{issue}</li>)}
+          </ul>
+        )}
+        {result.data.retryCount !== undefined && result.data.retryCount > 0 && (
+          <div style={{ marginTop: 6, fontSize: 11, color: 'var(--text-tertiary)' }}>
+            已重试 {result.data.retryCount} 次
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  if (result.type === 'report') {
+    return (
+      <div className="result-card success">
+        <div className="result-card-title" style={{ color: 'var(--success)' }}>
+          <FileText size={13} />
+          报告已生成
+          {result.data.reportId && (
+            <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'JetBrains Mono, monospace', fontWeight: 400 }}>
+              {result.data.reportId}
+            </span>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (result.type === 'parse') {
+    return (
+      <div className="result-card success">
+        <div className="result-card-title" style={{ color: 'var(--success)' }}>
+          <CheckCircle2 size={13} />
+          文献解析完成
+          {result.data.recordIdList && (
+            <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'JetBrains Mono, monospace', fontWeight: 400 }}>
+              {result.data.recordIdList.length} 条记录
+            </span>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return null;
+}
+
+export default function MessageList({
+  messages,
+  isStreaming,
+  streamingContent,
+  onCitationClick,
+  activeCitation,
+  citationMap,
+  onCopyReport,
+}: MessageListProps) {
+  const [popupData, setPopupData] = useState<{ citation: Citation; position: { top: number; left: number } } | null>(null);
+  const [expandedRefs, setExpandedRefs] = useState<Set<string>>(new Set());
+
+  const handleCitationClick = useCallback((citationId: string, event: React.MouseEvent) => {
+    if (activeCitation === citationId) {
+      setPopupData(null);
+      onCitationClick(null);
+      return;
+    }
+    const citation = citationMap.get(citationId);
+    if (!citation) return;
+    const rect = (event.target as HTMLElement).getBoundingClientRect();
+    const containerRect = (event.target as HTMLElement).closest('.messages-scroll')?.getBoundingClientRect();
+    const top = rect.bottom - (containerRect?.top || 0) + 6;
+    let left = rect.left - (containerRect?.left || 0) - 130;
+    left = Math.max(10, Math.min(left, (containerRect?.width || 600) - 310));
+    setPopupData({ citation, position: { top, left } });
+    onCitationClick(citationId);
+  }, [activeCitation, citationMap, onCitationClick]);
+
+  const closePopup = useCallback(() => {
+    setPopupData(null);
+    onCitationClick(null);
+  }, [onCitationClick]);
+
+  useEffect(() => {
+    if (!activeCitation) {
+      setPopupData(null);
+    }
+  }, [activeCitation]);
+
+  // 渲染Markdown中的引用为可点击标记
+  const renderContentWithCitations = (content: string, msgId: string) => {
+    // 匹配【来源: doc_id=X, page=Y】或 [n] 方括号引用
+    const parts: React.ReactNode[] = [];
+    let lastIdx = 0;
+    // 先匹配【来源:...】格式
+    const sourceRegex = /【来源:\s*(?:doc_id|文献ID)\s*=\s*([^,，\s】]+)[,，\s]*page[=:\s]*(\d+)】/g;
+    // 匹配已有的 [n] 引用
+    const bracketRegex = /\[(\d+)\]/g;
+    let citationIdx = 0;
+    const usedCitations = new Set<string>();
+
+    let match;
+    let segmentIdx = 0;
+
+    // 简化：直接把【来源】替换为上标引用标记
+    let processedContent = content;
+    const sourceCitations: { id: string; docId: string; page: string; index: number }[] = [];
+    let sourceMatch;
+    while ((sourceMatch = sourceRegex.exec(content)) !== null) {
+      const docId = sourceMatch[1];
+      const page = sourceMatch[2];
+      const citId = `${msgId}-${docId}-${page}`;
+      if (!usedCitations.has(citId)) {
+        usedCitations.add(citId);
+        citationIdx++;
+        sourceCitations.push({ id: citId, docId, page, index: citationIdx });
+      }
+    }
+
+    // 替换【来源...】为 [n]
+    sourceCitations.forEach((sc) => {
+      const regex = new RegExp(`【来源:\\s*(?:doc_id|文献ID)\\s*=\\s*${sc.docId}[,，\\s]*page[=:\\s]*${sc.page}】`, 'g');
+      processedContent = processedContent.replace(regex, `%%CIT:${sc.index}%%`);
+    });
+    processedContent = processedContent.replace(/%%CIT:(\d+)%%/g, '[$1]');
+
+    // 收集消息中的引用
+    const msgCitations: Citation[] = sourceCitations.map(sc => ({
+      id: sc.id,
+      index: sc.index,
+      docId: sc.docId,
+      page: sc.page,
+      snippet: '',
+    }));
+
+    // 基于[n]分拆渲染
+    const renderedParts: React.ReactNode[] = [];
+    let textBuffer = '';
+    let pos = 0;
+    while (pos < processedContent.length) {
+      const bm = processedContent.substring(pos).match(/\[(\d+)\]/);
+      if (!bm) {
+        textBuffer += processedContent.substring(pos);
+        break;
+      }
+      const bmIdx = bm.index!;
+      textBuffer += processedContent.substring(pos, pos + bmIdx);
+      const num = parseInt(bm[1]);
+      const sc = msgCitations.find(c => c.index === num);
+      renderedParts.push(<span key={`t-${segmentIdx++}`}>{textBuffer}</span>);
+      textBuffer = '';
+      if (sc) {
+        renderedParts.push(
+          <CitationMark
+            key={`c-${segmentIdx++}`}
+            index={num}
+            citationId={sc.id}
+            isActive={activeCitation === sc.id}
+            onClick={(e?: any) => {
+              // find nearest span for position
+              const event = window.event as MouseEvent;
+              if (event) handleCitationClick(sc.id, event as any);
+            }}
+          />
+        );
+      }
+      pos = pos + bmIdx + bm[0].length;
+    }
+    if (textBuffer) renderedParts.push(<span key={`t-${segmentIdx++}`}>{textBuffer}</span>);
+
+    // 处理点击事件委托
+    return (
+      <div>
+        <div
+          onClick={(e) => {
+            const target = e.target as HTMLElement;
+            if (target.classList.contains('citation-mark')) {
+              const citationId = msgCitations.find(c => c.index === parseInt(target.textContent?.replace(/[\[\]]/g, '') || '0'))?.id;
+              if (citationId) handleCitationClick(citationId, e);
+            }
+          }}
+        >
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+            {processedContent}
+          </ReactMarkdown>
+        </div>
+
+        {/* 参考文献折叠列表 */}
+        {msgCitations.length > 0 && (
+          <div className="ref-list">
+            <button
+              className="ref-toggle"
+              onClick={() => {
+                const newSet = new Set(expandedRefs);
+                if (newSet.has(msgId)) newSet.delete(msgId);
+                else newSet.add(msgId);
+                setExpandedRefs(newSet);
+              }}
+            >
+              {expandedRefs.has(msgId) ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+              参考文献 {msgCitations.length} 条
+            </button>
+            {expandedRefs.has(msgId) && (
+              <div className="ref-items">
+                {msgCitations.map(c => (
+                  <div
+                    key={c.id}
+                    className="ref-item"
+                    onClick={() => {
+                      // 简单的视觉反馈
+                      onCitationClick(activeCitation === c.id ? null : c.id);
+                    }}
+                  >
+                    <span className="ref-num">[{c.index}]</span>
+                    <span className="ref-id">{c.docId}</span>
+                    <span style={{ color: 'var(--text-tertiary)', fontSize: 11 }}>第 {c.page} 页</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const hasContent = messages.length > 0;
+
+  if (!hasContent && !isStreaming) {
+    return (
+      <div className="messages-scroll">
         <div className="messages-inner">
           <div className="welcome">
-            <div className="welcome-title">溯研 · 科研协作平台</div>
-            <div className="welcome-subtitle">
-              多智能体协作完成「读文献 → 理数据 → 出报告」全流程，
-              <br />
-              每条结论可追溯来源，确保科研严谨性。
-            </div>
-
-            <div className="welcome-features">
-              <div className="welcome-feature">
-                <div className="welcome-feature-title">
-                  <FileSearch size={14} style={{ color: '#0891b2' }} />
-                  文献解析
-                </div>
-                <div className="welcome-feature-desc">批量解析PDF，抽取核心观点、关键词、实验参数</div>
+            <h1>溯研 · 科研协作</h1>
+            <p>上传文献与数据，多智能体协同完成解析、清洗、写作、校验全链路，每条结论有据可查。</p>
+            <div className="quick-cards">
+              <div className="quick-card" onClick={() => {}}>
+                <h3>文献解析</h3>
+                <p>批量抽取观点与参数，自动结构化</p>
               </div>
-              <div className="welcome-feature">
-                <div className="welcome-feature-title">
-                  <Calculator size={14} style={{ color: '#059669' }} />
-                  数据处理
-                </div>
-                <div className="welcome-feature-desc">代码执行清洗、格式标准化、异常值标注</div>
+              <div className="quick-card" onClick={() => {}}>
+                <h3>数据处理</h3>
+                <p>清洗标准化，异常自动标注</p>
               </div>
-              <div className="welcome-feature">
-                <div className="welcome-feature-title">
-                  <FileText size={14} style={{ color: '#d97706' }} />
-                  报告生成
-                </div>
-                <div className="welcome-feature-desc">按模板组装初稿，强制每条结论附带来源指针</div>
+              <div className="quick-card" onClick={() => {}}>
+                <h3>报告生成</h3>
+                <p>按规范组装初稿，自动附引用</p>
               </div>
-              <div className="welcome-feature">
-                <div className="welcome-feature-title">
-                  <ShieldCheck size={14} style={{ color: '#dc2626' }} />
-                  合规校验
-                </div>
-                <div className="welcome-feature-desc">格式硬校验+逻辑软校验，不达标打回重跑</div>
-              </div>
-            </div>
-
-            <div className="welcome-actions">
-              <button
-                className="quick-chip"
-                data-quick="帮我解析上传的文献，提取核心观点和关键数据"
-              >
-                解析文献
-              </button>
-              <button
-                className="quick-chip"
-                data-quick="处理上传的实验数据，清洗并标注异常值"
-              >
-                清洗数据
-              </button>
-              <button
-                className="quick-chip"
-                data-quick="基于已解析的文献和数据，生成一份规范的科研报告"
-              >
-                生成报告
-              </button>
-              <button
-                className="quick-chip"
-                data-quick="全链路执行：解析文献、处理数据、生成报告、合规校验"
-              >
-                一键全流程
-              </button>
             </div>
           </div>
         </div>
@@ -136,131 +413,59 @@ export function MessageList({ messages, isGenerating }: MessageListProps) {
   }
 
   return (
-    <div className="messages-container">
-      <div className="messages-inner">
-        {messages.map((msg) => {
-          const { processed, allCitations } = processContent(msg.content, msg.citations);
-
-          return (
-            <div key={msg.id} className={`message-row ${msg.role}`}>
-              <div className={`message-avatar ${msg.role}`}>
-                {msg.role === 'user' ? (
-                  <User size={14} />
-                ) : (
-                  <Bot size={14} />
-                )}
-              </div>
-              <div className={`message-bubble ${msg.role}`}>
-                {msg.role === 'assistant' ? (
-                  <>
-                    <div className="markdown-content">
-                      <ReactMarkdown
-                        remarkPlugins={[remarkGfm]}
-                        components={{
-                          p: ({ children }) => <p>{children}</p>,
-                        }}
-                      >
-                        {processed}
-                      </ReactMarkdown>
-                    </div>
-
-                    {/* 数据处理异常 */}
-                    {msg.exceptions && msg.exceptions.length > 0 && (
-                      <div className="exception-list">
-                        <div className="exception-title">
-                          <AlertTriangle size={13} />
-                          数据异常清单（{msg.exceptions.length}处）
-                        </div>
-                        {msg.exceptions.slice(0, 6).map((e, i) => (
-                          <div key={i} className="exception-item">{e}</div>
-                        ))}
-                        {msg.exceptions.length > 6 && (
-                          <div className="exception-item" style={{ color: '#94a3b8' }}>
-                            ... 共{msg.exceptions.length}处
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* 合规校验结果 */}
-                    {msg.checkResult && (
-                      <div className={`check-result ${msg.checkResult.passed ? 'pass' : 'fail'}`}>
-                        {msg.checkResult.passed ? (
-                          <CheckCircle2 size={16} />
-                        ) : (
-                          <XCircle size={16} />
-                        )}
-                        <div>
-                          <div style={{ fontWeight: 500 }}>
-                            {msg.checkResult.passed ? '校验通过' : '校验未通过'}
-                            {msg.checkResult.retryCount ? `（第${msg.checkResult.retryCount}次重试）` : ''}
-                          </div>
-                          {msg.checkResult.issues && msg.checkResult.issues.length > 0 && (
-                            <div style={{ fontSize: '12px', marginTop: 4 }}>
-                              {msg.checkResult.issues.slice(0, 3).map((issue, i) => (
-                                <div key={i}>· {issue}</div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* 引用列表 */}
-                    {allCitations.length > 0 && (
-                      <div className="citations-panel">
-                        <div className="citations-title">参考文献</div>
-                        {allCitations.map((c, i) => (
-                          <div key={c.id} className="citation-item">
-                            <span className="citation-num">[{i + 1}]</span>
-                            <div>
-                              <div className="citation-doc">
-                                文档ID: {c.docId}
-                                {c.page && ` · 页码: ${c.page}`}
-                              </div>
-                              {c.snippet && <div className="citation-text">{c.snippet}</div>}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <div>{msg.content}</div>
-                )}
-
-                {msg.streaming && (
-                  <span className="thinking-indicator" style={{ display: 'inline-flex', marginLeft: 4, verticalAlign: 'middle' }}>
-                    <span className="thinking-dot" />
-                    <span className="thinking-dot" />
-                    <span className="thinking-dot" />
-                  </span>
-                )}
-              </div>
+    <div className="messages-scroll" style={{ position: 'relative' }}>
+      <div className="messages-inner" style={{ position: 'relative' }}>
+        {messages.map((msg) => (
+          <div key={msg.id} className={`message-row ${msg.role}`}>
+            {msg.role === 'agent' && <AgentAvatar agent={msg.agent} />}
+            <div className={`message-bubble ${msg.role}`}>
+              {msg.thinking && (
+                <div className="thinking-bubble" style={{ marginBottom: 6 }}>
+                  <span className="thinking-dots"><span /><span /><span /></span>
+                  {msg.thinking}
+                </div>
+              )}
+              {msg.content && renderContentWithCitations(msg.content, msg.id)}
+              {msg.result && <ResultCards result={msg.result} />}
             </div>
-          );
-        })}
+            {msg.role === 'user' && <UserAvatar />}
+          </div>
+        ))}
 
-        {isGenerating && messages[messages.length - 1]?.role === 'user' && (
-          <div className="message-row assistant">
-            <div className="message-avatar assistant">
-              <Bot size={14} />
-            </div>
-            <div className="message-bubble assistant">
-              <div className="thinking-indicator">
-                <span className="thinking-dot" />
-                <span className="thinking-dot" />
-                <span className="thinking-dot" />
-              </div>
+        {isStreaming && streamingContent && (
+          <div className="message-row agent">
+            <AgentAvatar />
+            <div className="message-bubble agent">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {streamingContent}
+              </ReactMarkdown>
+              <span style={{
+                display: 'inline-block',
+                width: '2px',
+                height: '14px',
+                background: 'var(--brand)',
+                marginLeft: '2px',
+                verticalAlign: 'text-bottom',
+                animation: 'blink 1s infinite',
+              }} />
             </div>
           </div>
         )}
 
-        <div ref={bottomRef} />
+        {popupData && (
+          <CitationPopup
+            citation={popupData.citation}
+            position={popupData.position}
+            onClose={closePopup}
+          />
+        )}
       </div>
+      <style>{`
+        @keyframes blink {
+          0%, 50% { opacity: 1; }
+          51%, 100% { opacity: 0; }
+        }
+      `}</style>
     </div>
   );
 }
-
-// 快速导入图标供welcome使用
-import { FileSearch, Calculator, FileText, ShieldCheck } from 'lucide-react';

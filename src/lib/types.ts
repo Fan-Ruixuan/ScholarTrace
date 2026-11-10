@@ -1,24 +1,48 @@
-// Agent 类型定义
+// ============ 消息与对话类型 ============
+
 export type AgentType = 'orchestrator' | 'parse' | 'data' | 'report' | 'check';
 
-export type NodeStatus = 'pending' | 'running' | 'done' | 'error';
-
-export interface AgentNode {
+export interface Message {
   id: string;
-  type: AgentType;
+  role: 'user' | 'agent';
+  content: string;
+  thinking?: string;
+  agent?: AgentType;
+  timestamp: string;
+  result?: WorkflowResult;
+}
+
+export interface Citation {
+  id: string;
+  index: number;
+  docId: string;
+  page: string;
+  snippet: string;
+}
+
+export interface UploadedFile {
+  id: string;
   name: string;
-  description: string;
-  status: NodeStatus;
+  type: 'pdf' | 'data' | 'other';
+}
+
+// ============ 工作流/Agent类型 ============
+
+export interface AgentState {
+  status: 'idle' | 'pending' | 'running' | 'done' | 'error' | 'retry';
+  message: string;
   progress: number;
   logs: string[];
-  output?: Record<string, unknown>;
+  recordIds?: string[];
+  output?: string;
+  retryCount?: number;
 }
 
 export interface PlanTask {
   agent: AgentType;
-  description: string;
   dependsOn: AgentType[];
-  parallel?: boolean;
+  parallel: boolean;
+  description: string;
 }
 
 export interface Plan {
@@ -27,40 +51,25 @@ export interface Plan {
   tasks: PlanTask[];
 }
 
-// 引用/来源
-export interface Citation {
-  id: string;
-  docId: string;
-  page?: string;
-  snippet?: string;
+export interface AgentLog {
+  agent: AgentType;
+  log: string;
+  time: string;
 }
 
-// 消息类型
-export type MessageRole = 'user' | 'assistant';
-
-export interface ChatMessage {
-  id: string;
-  role: MessageRole;
-  content: string;
-  streaming?: boolean;
-  citations?: Citation[];
-  exceptions?: string[];
-  checkResult?: { passed: boolean; issues?: string[]; retryCount?: number };
-}
-
-// 上传文件
-export interface UploadedFile {
-  id: string;
-  name: string;
-  size: number;
-  type: string;
-  file?: File;
-}
-
-// 知识库信息
-export interface KnowledgeBase {
-  level: 'L1' | 'L2' | 'L3';
-  name: string;
-  desc: string;
-  count: number;
+export interface WorkflowResult {
+  type: 'parse' | 'data' | 'report' | 'check';
+  data: {
+    recordId?: string;
+    recordIdList?: string[];
+    exceptionList?: string[];
+    reportContent?: string;
+    reportId?: string;
+    passed?: boolean;
+    issueList?: string[];
+    retryCount?: number;
+    rowsCleaned?: string;
+    feedback?: string;
+    [key: string]: unknown;
+  };
 }

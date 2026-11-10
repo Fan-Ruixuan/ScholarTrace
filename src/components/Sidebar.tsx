@@ -1,105 +1,91 @@
 'use client';
 
-import {
-  FileText,
-  Database,
-  BookOpen,
-  Plus,
-  Search,
-  Settings,
-  ChevronRight,
-} from 'lucide-react';
+import { useState } from 'react';
+import { Plus, Search, Database, Upload, MessageSquare, FolderOpen } from 'lucide-react';
 
-type SidebarProps = {
-  sessions: Array<{ id: string; title: string; time: string }>;
-  activeSessionId: string | null;
-  activeNav: string;
-  onNewChat: () => void;
+interface SidebarProps {
+  sessions: { id: string; title: string; active?: boolean }[];
+  currentSession: string;
+  onNewSession: () => void;
   onSelectSession: (id: string) => void;
-  onSelectNav: (nav: string) => void;
-};
+  kbCounts: { l1: number; l2: number; l3: number };
+}
 
-export function Sidebar({
-  sessions,
-  activeSessionId,
-  activeNav,
-  onNewChat,
-  onSelectSession,
-  onSelectNav,
-}: SidebarProps) {
+export default function Sidebar({ sessions, currentSession, onNewSession, onSelectSession, kbCounts }: SidebarProps) {
+  const [searchText, setSearchText] = useState('');
+
+  const filteredSessions = sessions.filter(s =>
+    s.title.toLowerCase().includes(searchText.toLowerCase())
+  );
+
   return (
-    <aside className="sidebar">
-      {/* Logo */}
-      <div className="sidebar-logo">
-        <div className="sidebar-logo-icon">溯</div>
-        <span className="sidebar-logo-text">溯研</span>
-      </div>
-
-      {/* 新建对话 */}
-      <button className="new-chat-btn" onClick={onNewChat}>
-        <Plus />
-        新建任务
-      </button>
-
-      {/* 主导航 */}
+    <div className="sidebar">
       <div className="sidebar-section">
-        <div className="sidebar-section-title">工作台</div>
-        <div
-          className={`sidebar-nav-item ${activeNav === 'chat' ? 'active' : ''}`}
-          onClick={() => onSelectNav('chat')}
-        >
-          <BookOpen size={16} />
-          对话空间
+        <button className="new-task-btn" onClick={onNewSession}>
+          <Plus size={15} />
+          新建任务
+        </button>
+      </div>
+
+      <div className="sidebar-section" style={{ paddingBottom: 12 }}>
+        <div className="sidebar-title">知识库</div>
+        <div className="kb-layer">
+          <span className="kb-dot" style={{ background: 'var(--l1)' }} />
+          L1 原始文献库
+          <span className="kb-count">{kbCounts.l1}</span>
         </div>
-        <div
-          className={`sidebar-nav-item ${activeNav === 'knowledge' ? 'active' : ''}`}
-          onClick={() => onSelectNav('knowledge')}
-        >
-          <Database size={16} />
-          知识库
-          <span className="sidebar-badge">3</span>
+        <div className="kb-layer">
+          <span className="kb-dot" style={{ background: 'var(--l2)' }} />
+          L2 结构化库
+          <span className="kb-count">{kbCounts.l2}</span>
         </div>
-        <div
-          className={`sidebar-nav-item ${activeNav === 'templates' ? 'active' : ''}`}
-          onClick={() => onSelectNav('templates')}
-        >
-          <FileText size={16} />
-          报告模板
+        <div className="kb-layer">
+          <span className="kb-dot" style={{ background: 'var(--l3)' }} />
+          L3 规则校验库
+          <span className="kb-count">{kbCounts.l3}</span>
         </div>
       </div>
 
-      {/* 历史任务 */}
-      <div className="sidebar-section" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-        <div className="sidebar-section-title">最近任务</div>
+      <div className="sidebar-section" style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: 0, borderBottom: 'none', overflow: 'hidden' }}>
+        <div style={{ padding: '12px 14px 8px' }}>
+          <div className="sidebar-title" style={{ marginBottom: 8 }}>历史任务</div>
+          <div style={{ position: 'relative' }}>
+            <Search size={12} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)' }} />
+            <input
+              type="text"
+              placeholder="搜索..."
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '5px 8px 5px 26px',
+                border: '1px solid var(--border)',
+                borderRadius: 5,
+                background: 'var(--bg-primary)',
+                fontSize: 12,
+                outline: 'none',
+                color: 'var(--text-primary)',
+              }}
+            />
+          </div>
+        </div>
         <div className="session-list">
-          {sessions.length === 0 ? (
-            <div style={{ padding: '16px 10px', fontSize: '12px', color: '#94a3b8' }}>
-              暂无任务记录
+          {filteredSessions.length === 0 && (
+            <div style={{ textAlign: 'center', padding: 20, fontSize: 12, color: 'var(--text-tertiary)' }}>
+              暂无历史任务
             </div>
-          ) : (
-            sessions.map((s) => (
-              <div
-                key={s.id}
-                className={`session-item ${activeSessionId === s.id ? 'active' : ''}`}
-                onClick={() => onSelectSession(s.id)}
-              >
-                <div style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.title}</div>
-                <div className="session-time">{s.time}</div>
-              </div>
-            ))
           )}
+          {filteredSessions.map((s) => (
+            <div
+              key={s.id}
+              className={`session-item ${s.id === currentSession || s.active ? 'active' : ''}`}
+              onClick={() => onSelectSession(s.id)}
+            >
+              {s.title}
+            </div>
+          ))}
         </div>
       </div>
-
-      {/* 底部 */}
-      <div className="sidebar-footer">
-        <div className="user-avatar">研</div>
-        <div className="user-info">
-          <div className="user-name">科研工作者</div>
-          <div className="user-role">高校实验室</div>
-        </div>
-        <Settings size={15} style={{ color: '#94a3b8', cursor: 'pointer' }} />
-      </div>
-    </aside>
+    </div>
   );
 }
