@@ -2,419 +2,394 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { Sidebar } from '@/components/Sidebar';
-import { TopBar } from '@/components/TopBar';
-import { MessageList } from '@/components/MessageList';
-import { ChatInput } from '@/components/ChatInput';
+import { TopBar, ReportViewer } from '@/components/TopBar';
+import { MessageList, type Message } from '@/components/MessageList';
+import { ChatInput, type UploadedFile } from '@/components/ChatInput';
 import { WorkflowPanel } from '@/components/WorkflowPanel';
-import { ReportViewer } from '@/components/ReportViewer';
-import { ChatMessage, AgentNode, AgentType, Plan, UploadedFile, Citation } from '@/lib/types';
-import { getAgentName } from '@/lib/agent-config';
-import type { OrchestratorEvent, ExecutionPlan } from '@/lib/coze-api';
+import type { AgentType, Plan, KnowledgeBase } from '@/lib/types';
 
-// 初始Agent节点状态（对应调度泳道图）
-function createInitialNodes(): AgentNode[] {
-  return [
-    {
-      id: 'orchestrator',
-      type: 'orchestrator',
-      name: getAgentName('orchestrator'),
-      description: '意图识别、任务拆解与调度',
-      status: 'pending',
-      logs: [],
-    },
-    {
-      id: 'parse',
-      type: 'parse',
-      name: getAgentName('parse'),
-      description: '批量解析文献、抽取观点',
-      status: 'pending',
-      logs: [],
-    },
-    {
-      id: 'data',
-      type: 'data',
-      name: getAgentName('data'),
-      description: '数据清洗、异常标注',
-      status: 'pending',
-      logs: [],
-    },
-    {
-      id: 'report',
-      type: 'report',
-      name: getAgentName('report'),
-      description: '按模板组装报告初稿',
-      status: 'pending',
-      logs: [],
-    },
-    {
-      id: 'check',
-      type: 'check',
-      name: getAgentName('check'),
-      description: '来源回溯、逻辑校验',
-      status: 'pending',
-      logs: [],
-    },
-  ];
+type AgentState = {
+  status: 'pending' | 'running' | 'done' | 'error';
+  progress: number;
+  logs: string[];
+  output?: Record<string, unknown>;
+};
+
+type AgentsState = Record<AgentType, AgentState>;
+
+function createInitialAgents(): AgentsState {
+  return {
+    orchestrator: { status: 'pending', progress: 0, logs: [] },
+    parse: { status: 'pending', progress: 0, logs: [] },
+    data: { status: 'pending', progress: 0, logs: [] },
+    report: { status: 'pending', progress: 0, logs: [] },
+    check: { status: 'pending', progress: 0, logs: [] },
+  };
 }
 
-// 知识库访问状态
-interface KBState {
-  L1: { lastAction?: string; lastDetail?: string; accessed: boolean };
-  L2: { lastAction?: string; lastDetail?: string; accessed: boolean };
-  L3: { lastAction?: string; lastDetail?: string; accessed: boolean };
-}
+const initialKnowledgeBases: KnowledgeBase[] = [
+  { level: 'L1', name: '原始文献库', desc: 'PDF原文/原始数据', count: 0 },
+  { level: 'L2', name: '结构化知识库', desc: '解析后的摘要/参数', count: 0 },
+  { level: 'L3', name: '规则校验库', desc: '学术规范/模板', count: 0 },
+];
 
 export default function ChatPage() {
-  const [conversations, setConversations] = useState<Array<{ id: string; title: string; updatedAt: number }>>([
-    { id: 'default', title: '欢迎使用溯研', updatedAt: Date.now() },
-  ]);
-  const [activeConversationId, setActiveConversationId] = useState('default');
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [nodes, setNodes] = useState<AgentNode[]>(createInitialNodes());
-  const [plan, setPlan] = useState<Plan | undefined>();
-  const [currentAgent, setCurrentAgent] = useState<AgentType | undefined>();
-  const [isLoading, setIsLoading] = useState(false);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [agents, setAgents] = useState<AgentsState>(createInitialAgents());
+  const [plan, setPlan] = useState<Plan | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
   const [showReport, setShowReport] = useState(false);
   const [reportContent, setReportContent] = useState('');
-  const [reportCitations, setReportCitations] = useState<Citation[]>([]);
-  const [kbState, setKbState] = useState<KBState>({
-    L1: { accessed: false }, L2: { accessed: false }, L3: { accessed: false },
-  });
-  const [retryInfo, setRetryInfo] = useState<{ from: AgentType; to: AgentType; reason: string; count: number } | null>(null);
-  const [apiStatus, setApiStatus] = useState<{
-    configured: boolean; mode: string; workflows: Record<string, boolean>;
-  } | null>(null);
+  const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>(initialKnowledgeBases);
+  const [apiConnected, setApiConnected] = useState(false);
+  const [sessions, setSessions] = useState<Array<{ id: string; title: string; time: string }>>([]);
+  const [activeNav, setActiveNav] = useState('chat');
 
-  const abortControllerRef = useRef<AbortController | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const assistantMsgIdRef = useRef<string | null>(null);
 
-  // 检查API配置状态
   useEffect(() => {
-    fetch('/api/chat').then(r => r.json()).then(data => {
-      setApiStatus({
-        configured: data.apiConfigured,
-        mode: data.mode,
-        workflows: Object.fromEntries(data.workflows.map((w: { name: string; configured: boolean }) => [w.name, w.configured])),
-      });
-    }).catch(() => {});
+    fetch('/api/chat')
+      .then((r) => r.json())
+      .then((data) => {
+        setApiConnected(!!data.apiConfigured);
+      })
+      .catch(() => {});
   }, []);
 
-  // 滚动到底部
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
-
-  const resetNodes = useCallback(() => {
-    setNodes(createInitialNodes());
-    setPlan(undefined);
-    setCurrentAgent(undefined);
-    setRetryInfo(null);
-    setKbState({ L1: { accessed: false }, L2: { accessed: false }, L3: { accessed: false } });
+  const resetWorkflow = useCallback(() => {
+    setAgents(createInitialAgents());
+    setPlan(null);
+    setKnowledgeBases([
+      { level: 'L1', name: '原始文献库', desc: 'PDF原文/原始数据', count: 0 },
+      { level: 'L2', name: '结构化知识库', desc: '解析后的摘要/参数', count: 0 },
+      { level: 'L3', name: '规则校验库', desc: '学术规范/模板', count: 0 },
+    ]);
   }, []);
 
-  const updateNode = useCallback((type: AgentType, updates: Partial<AgentNode>) => {
-    setNodes(prev => prev.map(n => n.type === type ? {
-      ...n,
-      ...updates,
-      logs: updates.logs ? [...(n.logs || []), ...updates.logs] : n.logs,
-    } : n));
-  }, []);
-
-  const appendLog = useCallback((type: AgentType, log: string) => {
-    setNodes(prev => prev.map(n => n.type === type ? {
-      ...n,
-      logs: [...(n.logs || []), `[${new Date().toLocaleTimeString()}] ${log}`],
-    } : n));
-  }, []);
-
-  const handleSend = useCallback(async (message: string, files: UploadedFile[]) => {
-    if (isLoading) return;
-
-    // 添加用户消息
-    const userMsg: ChatMessage = {
-      id: Math.random().toString(36).slice(2),
-      role: 'user',
-      content: message,
-      status: 'done',
-      timestamp: Date.now(),
-      files: files.length > 0 ? files : undefined,
-    };
-    setMessages(prev => [...prev, userMsg]);
-
-    if (messages.length === 0) {
-      setConversations(prev => prev.map(c =>
-        c.id === activeConversationId ? { ...c, title: message.slice(0, 20), updatedAt: Date.now() } : c,
-      ));
-    }
-
-    resetNodes();
-    setIsLoading(true);
-    setReportContent('');
-    setReportCitations([]);
-
-    abortControllerRef.current = new AbortController();
-
-    try {
-      const response = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message,
-          files: files.map(f => ({ id: f.docId || f.id, name: f.name })),
-        }),
-        signal: abortControllerRef.current.signal,
-      });
-
-      if (!response.ok || !response.body) {
-        throw new Error(`请求失败: ${response.status}`);
-      }
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-      const assistantMsgId = Math.random().toString(36).slice(2);
-      let assistantContent = '';
-      let assistantCitations: Citation[] = [];
-
-      // 初始助手消息
-      setMessages(prev => [...prev, {
-        id: assistantMsgId,
-        role: 'assistant',
-        content: '',
-        status: 'streaming',
-        timestamp: Date.now(),
-      }]);
-
-      const appendContent = (text: string) => {
-        assistantContent += text;
-        setMessages(prev => prev.map(m => m.id === assistantMsgId ? { ...m, content: assistantContent } : m));
-      };
-
-      const processEvent = (event: OrchestratorEvent) => {
-        switch (event.type) {
-          case 'plan': {
-            const ep: ExecutionPlan = event.plan;
-            const planTasks = ep.tasks.map((t, i) => ({
-              id: `t_${i}`,
-              name: t.description,
-              agent: t.agent,
-              dependsOn: t.dependsOn.map((d, j) => `t_dep_${j}`),
-              parallel: t.parallel,
-              status: 'pending' as const,
-            }));
-            setPlan({ taskId: `task_${Date.now()}`, intent: ep.description, tasks: planTasks });
-            break;
-          }
-
-          case 'thinking':
-            appendLog('orchestrator', event.content);
-            break;
-
-          case 'agent.status':
-            setCurrentAgent(event.agent);
-            updateNode(event.agent, {
-              status: event.status,
-              message: event.message,
-              ...(event.status === 'running' ? { startTime: Date.now() } : {}),
-              ...(event.status === 'done' || event.status === 'error' ? { endTime: Date.now() } : {}),
-            });
-            if (event.message) {
-              appendLog(event.agent, `[${event.status}] ${event.message}`);
-            }
-            // 更新plan中对应任务状态
-            setPlan(prev => {
-              if (!prev) return prev;
-              return {
-                ...prev,
-                tasks: prev.tasks.map(t =>
-                  t.agent === event.agent
-                    ? { ...t, status: event.status === 'done' ? 'done' as const : event.status === 'running' ? 'running' as const : event.status === 'error' ? 'error' as const : t.status }
-                    : t
-                ),
-              };
-            });
-            break;
-
-          case 'agent.log':
-            appendLog(event.agent, event.log);
-            break;
-
-          case 'agent.progress':
-            updateNode(event.agent, { progress: event.progress });
-            break;
-
-          case 'agent.output':
-            updateNode(event.agent, { output: event.output, recordIds: event.recordIds });
-            if (event.output) {
-              appendContent(`\n${event.output}\n`);
-            }
-            break;
-
-          case 'message.delta':
-            appendContent(event.content);
-            break;
-
-          case 'message.done':
-            break;
-
-          case 'knowledge.access':
-            setKbState(prev => ({
-              ...prev,
-              [event.layer]: {
-                accessed: true,
-                lastAction: event.action,
-                lastDetail: event.detail,
-              },
-            }));
-            break;
-
-          case 'citation.added':
-            assistantCitations.push({
-              id: event.citation.id,
-              docId: event.citation.docId,
-              docName: `文献 ${event.citation.docId}`,
-              page: event.citation.page,
-              snippet: event.citation.claim,
-            });
-            break;
-
-          case 'report.ready':
-            setReportContent(event.report);
-            setReportCitations(event.citations.length ? event.citations.map(c => ({
-              id: c.id, docId: c.docId, docName: `文献 ${c.docId}`, page: c.page, snippet: c.claim,
-            })) : assistantCitations);
-            setMessages(prev => prev.map(m => m.id === assistantMsgId ? { ...m, citations: assistantCitations } : m));
-            break;
-
-          case 'retry.loop':
-            setRetryInfo({ from: event.fromAgent, to: event.toAgent, reason: event.reason, count: event.count });
-            updateNode(event.toAgent, { retryCount: event.count });
-            break;
-
-          case 'error':
-            appendContent(`\n\n❌ **错误**: ${event.msg}\n`);
-            if (event.agent) {
-              updateNode(event.agent, { status: 'error', message: event.msg });
-            }
-            break;
-
-          case 'done':
-            break;
-        }
-      };
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed.startsWith('data: ')) continue;
-          const dataStr = trimmed.slice(6).trim();
-          if (dataStr === '[DONE]') {
-            setIsLoading(false);
-            setMessages(prev => prev.map(m => m.id === assistantMsgId ? {
-              ...m,
-              status: 'done',
-              citations: assistantCitations,
-            } : m));
-            setCurrentAgent(undefined);
-            return;
-          }
-          try {
-            const event = JSON.parse(dataStr) as OrchestratorEvent;
-            processEvent(event);
-          } catch {
-            // ignore
-          }
-        }
-      }
-    } catch (err) {
-      const errMsg = (err as Error).name === 'AbortError' ? '生成已停止' : (err as Error).message;
-      setMessages(prev => {
-        const last = prev[prev.length - 1];
-        if (last?.role === 'assistant' && last.status === 'streaming') {
-          return prev.map(m => m.id === last.id ? { ...m, content: m.content + `\n\n${(err as Error).name === 'AbortError' ? '⏹️ 已停止生成' : `❌ ${errMsg}`}`, status: 'error' } : m);
-        }
-        return [...prev, {
-          id: Math.random().toString(36).slice(2),
-          role: 'assistant',
-          content: `❌ 请求失败：${errMsg}`,
-          status: 'error',
-          timestamp: Date.now(),
-        }];
-      });
-    } finally {
-      setIsLoading(false);
-      setCurrentAgent(undefined);
-    }
-  }, [isLoading, messages.length, activeConversationId, resetNodes, updateNode, appendLog]);
-
-  const handleStop = useCallback(() => {
-    abortControllerRef.current?.abort();
-  }, []);
+  const updateAgent = useCallback(
+    (agent: AgentType, updates: Partial<AgentState>) => {
+      setAgents((prev) => ({
+        ...prev,
+        [agent]: { ...prev[agent], ...updates },
+      }));
+    },
+    []
+  );
 
   const handleNewChat = useCallback(() => {
     setMessages([]);
-    resetNodes();
     setReportContent('');
-    setReportCitations([]);
-    setShowReport(false);
-    const newId = Math.random().toString(36).slice(2);
-    setConversations(prev => [{ id: newId, title: '新对话', updatedAt: Date.now() }, ...prev]);
-    setActiveConversationId(newId);
-  }, [resetNodes]);
+    resetWorkflow();
+  }, [resetWorkflow]);
+
+  const handleSend = useCallback(
+    async (text: string, files: UploadedFile[]) => {
+      if (isGenerating) return;
+
+      // 添加用户消息
+      const userMsg: Message = {
+        id: `u_${Date.now()}`,
+        role: 'user',
+        content: text || `上传了 ${files.length} 个文件`,
+      };
+      setMessages((prev) => [...prev, userMsg]);
+
+      // 重置工作流
+      resetWorkflow();
+      setIsGenerating(true);
+      setReportContent('');
+
+      // 添加AI占位消息
+      const assistantId = `a_${Date.now()}`;
+      assistantMsgIdRef.current = assistantId;
+      setMessages((prev) => [
+        ...prev,
+        { id: assistantId, role: 'assistant', content: '', streaming: true },
+      ]);
+
+      // 更新L1计数
+      if (files.length > 0) {
+        setKnowledgeBases((prev) =>
+          prev.map((kb) =>
+            kb.level === 'L1' ? { ...kb, count: kb.count + files.length } : kb
+          )
+        );
+      }
+
+      const abortController = new AbortController();
+      abortRef.current = abortController;
+
+      try {
+        const res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: text,
+            files: files.map((f) => ({ id: f.id, name: f.name })),
+          }),
+          signal: abortController.signal,
+        });
+
+        if (!res.ok || !res.body) throw new Error('请求失败');
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let content = '';
+        let msgCitations: Message['citations'] = [];
+        let msgExceptions: string[] = [];
+        let msgCheckResult: Message['checkResult'];
+
+        const flushMessage = () => {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantId
+                ? {
+                    ...m,
+                    content,
+                    citations: msgCitations,
+                    exceptions: msgExceptions,
+                    checkResult: msgCheckResult,
+                  }
+                : m
+            )
+          );
+        };
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue;
+            const jsonStr = line.slice(6).trim();
+            if (!jsonStr || jsonStr === '[DONE]') continue;
+
+            try {
+              const event = JSON.parse(jsonStr);
+
+              switch (event.type) {
+                case 'plan': {
+                  const p = event.plan;
+                  setPlan({
+                    intent: p.intent,
+                    description: p.description,
+                    tasks: p.tasks.map((t: { agent: AgentType; description: string; dependsOn: AgentType[] }) => ({
+                      agent: t.agent,
+                      description: t.description,
+                      dependsOn: t.dependsOn || [],
+                    })),
+                  });
+                  updateAgent('orchestrator', { status: 'running', progress: 60, logs: ['生成执行计划...'] });
+                  break;
+                }
+
+                case 'agent.status': {
+                  updateAgent(event.agent, {
+                    status: event.status,
+                    progress: event.status === 'running' ? 30 : event.status === 'done' ? 100 : 0,
+                    logs: event.message
+                      ? [...(agents[event.agent as AgentType]?.logs || []), event.message]
+                      : agents[event.agent as AgentType]?.logs || [],
+                  });
+
+                  // 更新知识库访问
+                  if (event.agent === 'parse' && event.status === 'running') {
+                    setKnowledgeBases((prev) =>
+                      prev.map((kb) =>
+                        kb.level === 'L2' ? { ...kb, count: Math.max(kb.count, 1) } : kb
+                      )
+                    );
+                  }
+                  if (event.agent === 'data' && event.status === 'done') {
+                    setKnowledgeBases((prev) =>
+                      prev.map((kb) =>
+                        kb.level === 'L2' ? { ...kb, count: kb.count + 1 } : kb
+                      )
+                    );
+                  }
+                  if (event.agent === 'check' && event.status === 'running') {
+                    setKnowledgeBases((prev) =>
+                      prev.map((kb) => (kb.level === 'L3' ? { ...kb, count: 1 } : kb))
+                    );
+                  }
+                  break;
+                }
+
+                case 'agent.log': {
+                  updateAgent(event.agent, {
+                    logs: [...(agents[event.agent as AgentType]?.logs || []), event.log],
+                    progress: Math.min(
+                      (agents[event.agent as AgentType]?.progress || 0) + 10,
+                      90
+                    ),
+                  });
+                  break;
+                }
+
+                case 'agent.output': {
+                  const out = event.output || {};
+                  updateAgent(event.agent, { status: 'done', progress: 100, output: out });
+
+                  // 处理数据异常
+                  if (event.agent === 'data' && out.exception_list) {
+                    try {
+                      const list = JSON.parse(out.exception_list as string);
+                      msgExceptions = Array.isArray(list) ? list : [];
+                    } catch {}
+                  }
+
+                  // 处理校验结果
+                  if (event.agent === 'check') {
+                    const passed = out.passed === 'true' || out.passed === true;
+                    const issues = out.validation_result ? [String(out.validation_result)] : [];
+                    msgCheckResult = {
+                      passed,
+                      issues: passed ? [] : issues,
+                      retryCount: out.retry_count ? Number(out.retry_count) : undefined,
+                    };
+                  }
+
+                  // 报告内容
+                  if (event.agent === 'report' && out.report_content) {
+                    content = out.report_content as string;
+                    setReportContent(out.report_content as string);
+                  }
+                  flushMessage();
+                  break;
+                }
+
+                case 'message.delta': {
+                  content += event.content;
+                  flushMessage();
+                  break;
+                }
+
+                case 'message': {
+                  content = event.content;
+                  flushMessage();
+                  break;
+                }
+
+                case 'citation.add': {
+                  msgCitations = [
+                    ...msgCitations,
+                    {
+                      id: `c_${Date.now()}`,
+                      docId: event.docId,
+                      page: event.page,
+                    },
+                  ];
+                  flushMessage();
+                  break;
+                }
+
+                case 'done': {
+                  updateAgent('check', { status: 'done', progress: 100 });
+                  updateAgent('orchestrator', { status: 'done', progress: 100 });
+                  break;
+                }
+              }
+            } catch (e) {
+              // skip parse error
+            }
+          }
+        }
+
+        // 完成
+        setMessages((prev) =>
+          prev.map((m) => (m.id === assistantId ? { ...m, streaming: false } : m))
+        );
+      } catch (err: unknown) {
+        if ((err as Error).name !== 'AbortError') {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantId
+                ? { ...m, content: '抱歉，处理请求时出错，请稍后重试。', streaming: false }
+                : m
+            )
+          );
+        }
+      } finally {
+        setIsGenerating(false);
+        abortRef.current = null;
+        assistantMsgIdRef.current = null;
+      }
+    },
+    [isGenerating, resetWorkflow, updateAgent, agents]
+  );
+
+  const handleStop = useCallback(() => {
+    abortRef.current?.abort();
+    setIsGenerating(false);
+    setMessages((prev) =>
+      prev.map((m) => (m.streaming ? { ...m, streaming: false } : m))
+    );
+  }, []);
+
+  // 监听快捷按钮点击
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      const chip = target.closest('[data-quick]') as HTMLElement | null;
+      if (chip) {
+        const text = chip.getAttribute('data-quick');
+        if (text) {
+          const textarea = document.getElementById('chat-textarea') as HTMLTextAreaElement;
+          if (textarea) {
+            // 找到React的setState通过事件触发
+            const nativeSetter = Object.getOwnPropertyDescriptor(
+              window.HTMLTextAreaElement.prototype,
+              'value'
+            )?.set;
+            nativeSetter?.call(textarea, text);
+            textarea.dispatchEvent(new Event('input', { bubbles: true }));
+            textarea.focus();
+          }
+        }
+      }
+    };
+    document.addEventListener('click', handler);
+    return () => document.removeEventListener('click', handler);
+  }, []);
+
+  const hasReport = reportContent.length > 0;
+  const pageTitle = messages.length === 0 ? '溯研 · 多智能体科研协作平台' : '科研任务进行中';
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[#0a0e1a] text-slate-200 font-sans">
+    <div className="flex h-screen overflow-hidden bg-white">
       <Sidebar
-        conversations={conversations}
-        activeId={activeConversationId}
-        onSelect={setActiveConversationId}
+        sessions={sessions}
+        activeSessionId={null}
+        activeNav={activeNav}
         onNewChat={handleNewChat}
+        onSelectSession={() => {}}
+        onSelectNav={setActiveNav}
       />
 
-      <main className="flex-1 flex flex-col min-w-0">
+      <main className="main-area">
         <TopBar
-          onExportReport={() => setShowReport(true)}
-          hasReport={!!reportContent}
-          apiStatus={apiStatus}
+          title={pageTitle}
+          isConnected={apiConnected}
+          hasReport={hasReport}
+          onExport={() => setShowReport(true)}
+          onCopyReport={() => {
+            if (reportContent) navigator.clipboard.writeText(reportContent);
+          }}
         />
-
-        <MessageList
-          messages={messages}
-          isLoading={isLoading}
-          onViewReport={() => setShowReport(true)}
-          hasReport={!!reportContent}
-        />
-
-        <div ref={messagesEndRef} />
-
-        <ChatInput
-          onSend={handleSend}
-          onStop={handleStop}
-          isLoading={isLoading}
-        />
+        <MessageList messages={messages} isGenerating={isGenerating} />
+        <ChatInput onSend={handleSend} onStop={handleStop} isGenerating={isGenerating} />
       </main>
 
-      <WorkflowPanel
-        nodes={nodes}
-        plan={plan}
-        currentAgent={currentAgent}
-        kbState={kbState}
-        retryInfo={retryInfo}
-      />
+      <WorkflowPanel plan={plan} agents={agents} knowledgeBases={knowledgeBases} />
 
       {showReport && reportContent && (
-        <ReportViewer
-          content={reportContent}
-          citations={reportCitations}
-          onClose={() => setShowReport(false)}
-        />
+        <ReportViewer content={reportContent} onClose={() => setShowReport(false)} />
       )}
     </div>
   );

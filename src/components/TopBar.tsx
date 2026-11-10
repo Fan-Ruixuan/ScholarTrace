@@ -1,75 +1,108 @@
 'use client';
 
-import { Download, Settings, Sparkles, Wifi, WifiOff } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Download, Copy, FileText, MoreHorizontal, X } from 'lucide-react';
 
-interface TopBarProps {
-  onExportReport: () => void;
+type TopBarProps = {
+  title: string;
+  isConnected: boolean;
   hasReport: boolean;
-  apiStatus?: {
-    configured: boolean;
-    mode: string;
-    workflows: Record<string, boolean>;
-  } | null;
-}
+  onExport: () => void;
+  onCopyReport: () => void;
+};
 
-export function TopBar({ onExportReport, hasReport, apiStatus }: TopBarProps) {
-  const allWorkflowsConnected = apiStatus?.workflows &&
-    Object.values(apiStatus.workflows).every(Boolean);
-
+export function TopBar({
+  title,
+  isConnected,
+  hasReport,
+  onExport,
+  onCopyReport,
+}: TopBarProps) {
   return (
-    <header className="h-14 flex-shrink-0 border-b border-slate-800/50 bg-slate-900/60 backdrop-blur-xl flex items-center justify-between px-5 z-10">
-      <div className="flex items-center gap-3">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 via-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
-            <Sparkles className="w-4 h-4 text-white" />
-          </div>
-          <div>
-            <h1 className="text-sm font-bold text-slate-100 tracking-tight">溯研 Suyan</h1>
-            <p className="text-[10px] text-slate-500">多智能体科研协作平台</p>
-          </div>
-        </div>
-
-        <div className="h-6 w-px bg-slate-700/50 mx-2" />
-
-        {/* API状态指示 */}
-        {apiStatus && (
-          <div className="flex items-center gap-1.5">
-            {apiStatus.configured && allWorkflowsConnected ? (
-              <>
-                <Wifi className="w-3.5 h-3.5 text-emerald-400" />
-                <span className="text-[11px] text-emerald-400 font-medium">
-                  Coze平台已连接
-                </span>
-                <span className="text-[10px] text-slate-500 ml-1 px-1.5 py-0.5 rounded bg-slate-800/50">
-                  {apiStatus.mode === 'orchestrator' ? '主控编排' : 'Bot对话'}
-                </span>
-              </>
-            ) : (
-              <>
-                <WifiOff className="w-3.5 h-3.5 text-amber-400" />
-                <span className="text-[11px] text-amber-400">演示模式</span>
-              </>
-            )}
-          </div>
-        )}
+    <header className="topbar">
+      <div className="topbar-title">{title}</div>
+      <div className="topbar-status">
+        <span className="status-dot" />
+        {isConnected ? 'API 已连接' : '演示模式'}
       </div>
-
-      <div className="flex items-center gap-2">
+      <div className="topbar-actions">
         {hasReport && (
-          <Button
-            size="sm"
-            onClick={onExportReport}
-            className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white border-0 shadow-lg shadow-blue-500/20 text-xs"
-          >
-            <Download className="w-3.5 h-3.5 mr-1.5" />
-            查看报告
-          </Button>
+          <>
+            <button className="topbar-btn" onClick={onCopyReport}>
+              <Copy />
+              复制
+            </button>
+            <button className="topbar-btn topbar-btn-primary" onClick={onExport}>
+              <Download />
+              导出报告
+            </button>
+          </>
         )}
-        <Button variant="ghost" size="icon" className="text-slate-400 hover:text-slate-200">
-          <Settings className="w-4 h-4" />
-        </Button>
       </div>
     </header>
+  );
+}
+
+type ReportViewerProps = {
+  content: string;
+  citations?: Array<{ id: string; docId: string; page?: string; text?: string }>;
+  onClose: () => void;
+};
+
+export function ReportViewer({ content, onClose }: ReportViewerProps) {
+  const handleDownload = () => {
+    const blob = new Blob([content], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `科研报告_${new Date().toLocaleDateString('zh-CN')}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(content);
+  };
+
+  // 简单处理markdown为HTML展示
+  const formatMarkdown = (md: string) => {
+    return md
+      .replace(/^### (.*$)/gm, '<h3>$1</h3>')
+      .replace(/^## (.*$)/gm, '<h2>$1</h2>')
+      .replace(/^# (.*$)/gm, '<h1>$1</h1>')
+      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\n\n/g, '</p><p>')
+      .replace(/^- (.*$)/gm, '<li>$1</li>');
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <div className="modal-title">
+            <FileText size={16} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 6 }} />
+            报告预览
+          </div>
+          <button className="modal-close" onClick={onClose}>
+            <X />
+          </button>
+        </div>
+        <div className="modal-body">
+          <div
+            className="report-content"
+            dangerouslySetInnerHTML={{ __html: formatMarkdown(content) }}
+          />
+        </div>
+        <div className="modal-footer">
+          <button className="topbar-btn" onClick={handleCopy}>
+            <Copy size={13} />
+            复制Markdown
+          </button>
+          <button className="topbar-btn topbar-btn-primary" onClick={handleDownload}>
+            <Download size={13} />
+            下载报告
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
