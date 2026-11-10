@@ -1,107 +1,95 @@
-'use client';
+"use client";
 
-import { Download, Copy, FileText, MoreHorizontal, X } from 'lucide-react';
+import { Download, Share2, Clock, Copy, Check } from "lucide-react";
+import { useState } from "react";
 
-type TopBarProps = {
-  title: string;
-  isConnected: boolean;
+interface TopBarProps {
+  sessionTitle: string;
+  isGenerating: boolean;
   hasReport: boolean;
-  onExport: () => void;
-  onCopyReport: () => void;
-};
-
-export function TopBar({
-  title,
-  isConnected,
-  hasReport,
-  onExport,
-  onCopyReport,
-}: TopBarProps) {
-  return (
-    <header className="topbar">
-      <div className="topbar-title">{title}</div>
-      <div className="topbar-status">
-        <span className="status-dot" />
-        {isConnected ? 'API 已连接' : '演示模式'}
-      </div>
-      <div className="topbar-actions">
-        {hasReport && (
-          <>
-            <button className="topbar-btn" onClick={onCopyReport}>
-              <Copy />
-              复制
-            </button>
-            <button className="topbar-btn topbar-btn-primary" onClick={onExport}>
-              <Download />
-              导出报告
-            </button>
-          </>
-        )}
-      </div>
-    </header>
-  );
+  lastReport: string | null;
 }
 
-type ReportViewerProps = {
-  content: string;
-  citations?: Array<{ id: string; docId: string; page?: string; text?: string }>;
-  onClose: () => void;
-};
+export default function TopBar({ sessionTitle, isGenerating, hasReport, lastReport }: TopBarProps) {
+  const [copied, setCopied] = useState(false);
 
-export function ReportViewer({ content, onClose }: ReportViewerProps) {
+  const handleCopy = () => {
+    if (lastReport) {
+      navigator.clipboard.writeText(lastReport);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
   const handleDownload = () => {
-    const blob = new Blob([content], { type: 'text/markdown' });
+    if (!lastReport) return;
+    const blob = new Blob([lastReport], { type: "text/markdown;charset=utf-8" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
-    a.download = `科研报告_${new Date().toLocaleDateString('zh-CN')}.md`;
+    a.download = `${sessionTitle || "科研报告"}.md`;
     a.click();
     URL.revokeObjectURL(url);
   };
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(content);
-  };
-
-  // 简单处理markdown为HTML展示
-  const formatMarkdown = (md: string) => {
-    return md
-      .replace(/^### (.*$)/gm, '<h3>$1</h3>')
-      .replace(/^## (.*$)/gm, '<h2>$1</h2>')
-      .replace(/^# (.*$)/gm, '<h1>$1</h1>')
-      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-      .replace(/\n\n/g, '</p><p>')
-      .replace(/^- (.*$)/gm, '<li>$1</li>');
-  };
-
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-header">
-          <div className="modal-title">
-            <FileText size={16} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 6 }} />
-            报告预览
+    <div
+      className="h-14 px-6 flex items-center justify-between flex-shrink-0"
+      style={{ background: "var(--bg-primary)", borderBottom: "1px solid var(--border-subtle)" }}
+    >
+      <div className="flex items-center gap-3 min-w-0">
+        <div>
+          <div className="flex items-center gap-2">
+            <h1
+              className="text-sm font-medium truncate"
+              style={{ color: "var(--text-primary)" }}
+            >
+              {sessionTitle || "新建任务"}
+            </h1>
+            {isGenerating && (
+              <span
+                className="flex items-center gap-1.5 text-xs px-2 py-0.5 rounded"
+                style={{ background: "var(--brand-light)", color: "var(--brand)" }}
+              >
+                <span className="w-1.5 h-1.5 rounded-full animate-node-breath" style={{ background: "currentColor" }} />
+                处理中
+              </span>
+            )}
           </div>
-          <button className="modal-close" onClick={onClose}>
-            <X />
-          </button>
         </div>
-        <div className="modal-body">
-          <div
-            className="report-content"
-            dangerouslySetInnerHTML={{ __html: formatMarkdown(content) }}
-          />
-        </div>
-        <div className="modal-footer">
-          <button className="topbar-btn" onClick={handleCopy}>
-            <Copy size={13} />
-            复制Markdown
-          </button>
-          <button className="topbar-btn topbar-btn-primary" onClick={handleDownload}>
-            <Download size={13} />
-            下载报告
-          </button>
-        </div>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <button
+          className="btn-ghost"
+          disabled={!hasReport}
+          onClick={handleCopy}
+          style={{ opacity: hasReport ? 1 : 0.4 }}
+        >
+          {copied ? <Check size={13} /> : <Copy size={13} />}
+          {copied ? "已复制" : "复制"}
+        </button>
+        <button
+          className="btn-ghost"
+          disabled={!hasReport}
+          onClick={handleDownload}
+          style={{ opacity: hasReport ? 1 : 0.4 }}
+        >
+          <Download size={13} />
+          导出 MD
+        </button>
+        <div
+          className="w-px h-5 mx-1"
+          style={{ background: "var(--border-subtle)" }}
+        />
+        <button className="btn-ghost">
+          <Clock size={13} />
+          历史
+        </button>
+        <button className="btn-ghost">
+          <Share2 size={13} />
+          分享
+        </button>
       </div>
     </div>
   );

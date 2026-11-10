@@ -25,7 +25,7 @@ const headers = {
 // ============ 类型定义 ============
 
 export type AgentType = 'orchestrator' | 'parse' | 'data' | 'report' | 'check';
-export type AgentStatus = 'pending' | 'running' | 'done' | 'error' | 'retry';
+export type AgentStatus = 'idle' | 'pending' | 'running' | 'done' | 'error' | 'retry';
 
 export interface AgentNodeState {
   type: AgentType;
