@@ -1,11 +1,16 @@
-export type AgentType = "orchestrator" | "parse" | "data" | "report" | "check";
+// Agent 类型定义
+export type AgentType = 'orchestrator' | 'parse' | 'data' | 'report' | 'check';
 
-export type NodeStatus = "idle" | "running" | "done" | "error";
+export type NodeStatus = 'pending' | 'running' | 'done' | 'error';
 
-export interface AgentStatus {
+export interface AgentNode {
+  id: string;
+  type: AgentType;
+  name: string;
+  description: string;
   status: NodeStatus;
   progress: number;
-  message?: string;
+  logs: string[];
   output?: Record<string, unknown>;
 }
 
@@ -22,33 +27,28 @@ export interface Plan {
   tasks: PlanTask[];
 }
 
+// 引用/来源
 export interface Citation {
+  id: string;
   docId: string;
-  page: string;
-  text?: string;
-  recordId?: string;
+  page?: string;
+  snippet?: string;
 }
 
-export type MessageRole = "user" | "assistant";
+// 消息类型
+export type MessageRole = 'user' | 'assistant';
 
-export type WorkflowResult =
-  | { type: "data"; recordId: string; exceptionList: string; failed?: string }
-  | { type: "parse"; recordIds?: string[] }
-  | { type: "check"; passed: boolean; issues?: string[]; retryCount?: number }
-  | { type: "report"; reportId?: string };
-
-export interface Message {
+export interface ChatMessage {
   id: string;
   role: MessageRole;
   content: string;
   streaming?: boolean;
-  thinking?: string;
   citations?: Citation[];
-  files?: UploadedFile[];
-  workflowResults?: WorkflowResult[];
-  isReport?: boolean;
+  exceptions?: string[];
+  checkResult?: { passed: boolean; issues?: string[]; retryCount?: number };
 }
 
+// 上传文件
 export interface UploadedFile {
   id: string;
   name: string;
@@ -57,38 +57,10 @@ export interface UploadedFile {
   file?: File;
 }
 
-export interface Session {
-  id: string;
-  title: string;
-  timestamp: string;
-  messages?: Message[];
-}
-
-export interface ChatConfig {
-  botConfigured: boolean;
-  apiConfigured: boolean;
-  mode: string;
-  botId: string | null;
-  workflows: Array<{ name: string; id: string | null; configured: boolean }>;
-}
-
-export interface SSEEvent {
-  type: "plan" | "agent.status" | "agent.log" | "thinking" | "message.delta"
-    | "citation.add" | "workflow.result" | "exception.list" | "check.result"
-    | "report.done" | "done" | "kb.update" | "error";
-  plan?: Plan;
-  agent?: AgentType;
-  status?: NodeStatus;
-  message?: string;
-  content?: string;
-  log?: string;
-  citation?: Citation;
-  result?: unknown;
-  issues?: string[];
-  passed?: boolean;
-  retryCount?: number;
-  delta?: string;
-  kb?: { level: "L1" | "L2" | "L3"; delta: number };
-  error?: string;
-  exceptions?: string[];
+// 知识库信息
+export interface KnowledgeBase {
+  level: 'L1' | 'L2' | 'L3';
+  name: string;
+  desc: string;
+  count: number;
 }
