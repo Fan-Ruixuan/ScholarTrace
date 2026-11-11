@@ -505,7 +505,203 @@ function LogStream({ logs }: { logs: AgentLog[] }) {
 }
 
 /* ============================================================================
-   主组件 WorkflowPanel —— 组装子组件
+   快照引擎 —— 给定时刻的 timelineEvents → 重建那一刻的 agents/logs/kbHits
+   ========================================================================== */
+
+interface ReplaySnapshot {
+  agents: Record<AgentType, AgentState>;
+  logs: AgentLog[];
+  kbHits: { l1: number; l2: number; l3: number };
+}
+
+/** 初始状态（所有节点 pending） */
+function emptyAgents(): Record<AgentType, AgentState> {
+  return AGENT_ORDER.reduce((acc, a) => {
+    acc[a] = { status: 'pending', message: '', progress: 0, logs: [] };
+    return acc;
+  }, {} as Record<AgentType, AgentState>);
+}
+
+/** 根据时间戳从 timelineEvents 重建那一刻的状态（纯函数） */
+function snapshotAt(events: TimelineEvent[], ts: number): ReplaySnapshot {
+  const agents = emptyAgents();
+  const logs: AgentLog[] = [];
+  let l1 = 0, l2 = 0, l3 = 0;
+
+  for (const ev of events) {
+    if (ev.ts > ts) break; // 时间戳有序，提前终止
+
+    switch (ev.kind) {
+      case 'node.status':
+        agents[ev.agent] = {
+          status: ev.status,
+          progress: ev.status === 'done' ? 1 : ev.progress ?? agents[ev.agent].progress,
+          message: ev.message ?? agents[ev.agent].message,
+          logs: agents[ev.agent].logs,
+          retryCount: ev.status === 'retry' ? ((agents[ev.agent].retryCount ?? 0) + 1) : agents[ev.agent].retryCount,
+        };
+        break;
+      case 'agent.log':
+        logs.push({
+          agent: ev.agent,
+          log: ev.log,
+          time: new Date(ev.ts).toLocaleTimeString('zh-CN', { hour12: false }),
+        });
+        break;
+      case 'kb.access':
+        if (ev.layer === 'L1') l1++;
+        else if (ev.layer === 'L2') l2++;
+        else l3++;
+        break;
+      case 'flow.pointer':
+      case 'retry.loop':
+      case 'done':
+        break;
+    }
+  }
+
+  return { agents, logs, kbHits: { l1, l2, l3 } };
+}
+
+/* ============================================================================
+   TimelineReplayer —— 时间轴回放滑块
+   ========================================================================== */
+
+interface TimelineReplayerProps {
+  events: TimelineEvent[];
+  liveAgents: Record<AgentType, AgentState>;
+  onReplayUpdate: (snapshot: ReplaySnapshot) => void;
+  onExit: () => void;
+}
+
+function TimelineReplayer({ events, liveAgents, onReplayUpdate, onExit }: TimelineReplayerProps) {
+  // 确定时间范围（用最后一个事件的 ts，或者所有 live agent 都 done 的时间作为结束点）
+  const { minTs, maxTs } = useMemo(() => {
+    if (events.length === 0) return { minTs: 0, maxTs: 0 };
+    const allDone = AGENT_ORDER.every(a => liveAgents[a].status === 'done');
+    const lastTs = events[events.length - 1].ts;
+    return {
+      minTs: events[0].ts,
+      maxTs: allDone ? lastTs : lastTs, // 未完成时仍可回放已发生的部分
+    };
+  }, [events, liveAgents]);
+
+  const [replayTs, setReplayTs] = useState<number>(maxTs);
+  const [autoPlay, setAutoPlay] = useState<boolean>(false);
+  const rafRef = useRef<number | null>(null);
+
+  // 自动播放：从 minTs 匀速推进到 maxTs
+  useEffect(() => {
+    if (!autoPlay) return;
+    let startMs = performance.now();
+    const startTs = replayTs;
+    const totalDuration = Math.max(maxTs - minTs, 1);
+    const SIMULATION_MS = 8000; // 8秒播完
+    const tick = () => {
+      const elapsed = performance.now() - startMs;
+      const progress = Math.min(elapsed / SIMULATION_MS, 1);
+      const newTs = startTs + (maxTs - startTs) * progress;
+      setReplayTs(newTs);
+      if (progress < 1) {
+        rafRef.current = requestAnimationFrame(tick);
+      } else {
+        setAutoPlay(false);
+      }
+    };
+    rafRef.current = requestAnimationFrame(tick);
+    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
+  }, [autoPlay, minTs, maxTs]);
+
+  // replayTs 变化时更新快照
+  useEffect(() => {
+    onReplayUpdate(snapshotAt(events, replayTs));
+  }, [replayTs, events, onReplayUpdate]);
+
+  const fmt = (ts: number) => {
+    // 用第一个事件的 ts 作为相对起点，显示经过的秒数
+    const relMs = ts - minTs;
+    const sec = Math.floor(relMs / 1000);
+    if (sec < 60) return `${sec}s`;
+    const min = Math.floor(sec / 60);
+    return `${min}m${sec % 60}s`;
+  };
+
+  if (events.length < 2) return null;
+
+  const progress = Math.round(((replayTs - minTs) / Math.max(maxTs - minTs, 1)) * 100);
+
+  return (
+    <div className="topo-section" style={{ background: 'rgba(22,32,52,0.50)' }}>
+      <div className="topo-section-title" style={{ marginBottom: 12 }}>
+        <Activity size={12} />
+        工作流时间轴回放
+        <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--text-tertiary)' }}>
+          回放中
+        </span>
+      </div>
+      <div style={{ padding: '0 2px' }}>
+        <div
+          className="topo-section"
+          style={{ background: 'rgba(59,130,246,0.08)', padding: '6px 10px', margin: 0 }}
+        >
+          <div style={{
+            width: `${progress}%`, height: 3,
+            background: 'var(--brand)',
+            borderRadius: 2,
+            transition: autoPlay ? 'none' : 'width 100ms',
+          }} />
+        </div>
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 10, marginTop: 8,
+          fontFamily: "'JetBrains Mono', monospace", fontSize: 11,
+          color: 'var(--text-tertiary)',
+        }}>
+          <span>{fmt(minTs)}</span>
+          <input
+            type="range"
+            min={minTs}
+            max={maxTs}
+            value={replayTs}
+            onChange={(e) => { setAutoPlay(false); setReplayTs(parseInt(e.target.value)); }}
+            style={{
+              flex: 1, height: 4, cursor: 'pointer',
+              accentColor: 'var(--brand)',
+            }}
+          />
+          <span>{fmt(maxTs)}</span>
+        </div>
+        <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+          <button
+            className="btn"
+            style={{ padding: '4px 10px', fontSize: 12 }}
+            onClick={() => setAutoPlay(!autoPlay)}
+          >
+            {autoPlay ? <Pause size={12} /> : <Play size={12} />}
+            {autoPlay ? '暂停' : '重播'}
+          </button>
+          <button
+            className="btn"
+            style={{ padding: '4px 10px', fontSize: 12 }}
+            onClick={() => { setReplayTs(maxTs); setAutoPlay(false); }}
+          >
+            <RotateCcw size={12} />
+            回到完成
+          </button>
+          <button
+            className="btn-ghost"
+            style={{ padding: '4px 10px', fontSize: 12, marginLeft: 'auto' }}
+            onClick={onExit}
+          >
+            退出回放
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================================
+   主组件 WorkflowPanel —— 组装子组件 + 回放模式切换
    ========================================================================== */
 
 export default function WorkflowPanel({
@@ -523,6 +719,17 @@ export default function WorkflowPanel({
   activeCitation: string | null;
   timelineEvents: TimelineEvent[];
 }) {
+  const [isReplaying, setIsReplaying] = useState(false);
+  const [replaySnapshot, setReplaySnapshot] = useState<ReplaySnapshot | null>(null);
+
+  // 检测是否有完整事件（>=3 条 timelineEvents 才有回放意义）
+  const canReplay = timelineEvents.length >= 3;
+
+  // 回放数据：回放模式用快照，否则用 props 实时数据
+  const displayAgents = isReplaying && replaySnapshot ? replaySnapshot.agents : agents;
+  const displayLogs = isReplaying && replaySnapshot ? replaySnapshot.logs : logs;
+  const displayKb = isReplaying && replaySnapshot ? replaySnapshot.kbHits : kbHits;
+
   return (
     <div className="topo-panel">
       <PlanBlock plan={plan} />
@@ -532,19 +739,52 @@ export default function WorkflowPanel({
         <div className="topo-section-title">
           <Brain size={12} />
           Agent 拓扑
+          {isReplaying && (
+            <span style={{ marginLeft: 'auto', fontSize: 9, color: 'var(--warning)' }}>
+              回放模式
+            </span>
+          )}
         </div>
         <TopologySvg
-          agents={agents}
+          agents={displayAgents}
           timelineEvents={timelineEvents}
           activeCitation={activeCitation}
         />
       </div>
 
       {/* 三层知识库同心环 */}
-      <KBRings kbHits={kbHits} timelineEvents={timelineEvents} />
+      <KBRings kbHits={displayKb} timelineEvents={timelineEvents} />
 
       {/* 执行日志流 */}
-      <LogStream logs={logs} />
+      <LogStream logs={displayLogs} />
+
+      {/* 回放入口 / 回放面板 */}
+      {canReplay && !isReplaying && (
+        <div style={{ display: 'flex', justifyContent: 'center' }}>
+          <button
+            className="btn-ghost"
+            onClick={() => {
+              // 初始化快照为最后时刻（完成态）
+              const lastTs = timelineEvents[timelineEvents.length - 1].ts;
+              setReplaySnapshot(snapshotAt(timelineEvents, lastTs));
+              setIsReplaying(true);
+            }}
+            style={{ fontSize: 11, color: 'var(--brand)' }}
+          >
+            <RotateCcw size={11} />
+            回放工作流
+          </button>
+        </div>
+      )}
+
+      {isReplaying && (
+        <TimelineReplayer
+          events={timelineEvents}
+          liveAgents={agents}
+          onReplayUpdate={setReplaySnapshot}
+          onExit={() => { setIsReplaying(false); setReplaySnapshot(null); }}
+        />
+      )}
     </div>
   );
 }
