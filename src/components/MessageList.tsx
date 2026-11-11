@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { User, Bot, FileText, AlertTriangle, CheckCircle2, XCircle, X, ChevronDown, ChevronRight, Search, ClipboardCopy } from 'lucide-react';
+import { User, Bot, FileText, AlertTriangle, CheckCircle2, XCircle, X, ChevronDown, ChevronRight, Search, ClipboardCopy, ArrowUpRight } from 'lucide-react';
 import type { Message, Citation, WorkflowResult } from '@/lib/types';
 import { AGENT_CONFIGS } from '@/lib/agent-config';
 
@@ -15,6 +15,7 @@ interface MessageListProps {
   activeCitation: string | null;
   citationMap: Map<string, Citation>;
   onCopyReport?: (content: string) => void;
+  onQuickStart?: (prompt: string) => void;
 }
 
 function AgentAvatar({ agent = 'orchestrator' }: { agent?: string }) {
@@ -214,6 +215,7 @@ export default function MessageList({
   activeCitation,
   citationMap,
   onCopyReport,
+  onQuickStart,
 }: MessageListProps) {
   const [popupData, setPopupData] = useState<{ citation: Citation; position: { top: number; left: number } } | null>(null);
   const [expandedRefs, setExpandedRefs] = useState<Set<string>>(new Set());
@@ -369,25 +371,56 @@ export default function MessageList({
   const hasContent = messages.length > 0;
 
   if (!hasContent && !isStreaming) {
+    const quickStarts = [
+      {
+        title: '文献解析',
+        desc: '批量抽取观点与参数，自动结构化',
+        prompt: '帮我解析上传的文献，抽取核心观点并结构化存入知识库',
+      },
+      {
+        title: '数据处理',
+        desc: '清洗标准化，异常自动标注',
+        prompt: '帮我清洗上传的实验数据，统一量纲并标注异常值',
+      },
+      {
+        title: '报告生成',
+        desc: '按规范组装初稿，自动附引用',
+        prompt: '基于已有材料生成一份带引用标记的科研报告，并做合规校验',
+      },
+    ];
     return (
       <div className="messages-scroll">
         <div className="messages-inner">
           <div className="welcome">
-            <h1>溯研 · 科研协作</h1>
-            <p>上传文献与数据，多智能体协同完成解析、清洗、写作、校验全链路，每条结论有据可查。</p>
+            <div className="welcome-eyebrow">MULTI-AGENT RESEARCH WORKBENCH</div>
+            <h1>让每条结论，都能溯回原文</h1>
+            <p>
+              上传文献与实验数据，主控调度四类 Agent 完成解析、清洗、写作与合规校验；
+              所有产出通过 record_id 指针与引用标记全程可追溯。
+            </p>
+            <div className="welcome-caps">
+              <span>三层知识库</span>
+              <span>record_id 指针</span>
+              <span>引用可溯源</span>
+              <span>校验闭环</span>
+            </div>
             <div className="quick-cards">
-              <div className="quick-card" onClick={() => {}}>
-                <h3>文献解析</h3>
-                <p>批量抽取观点与参数，自动结构化</p>
-              </div>
-              <div className="quick-card" onClick={() => {}}>
-                <h3>数据处理</h3>
-                <p>清洗标准化，异常自动标注</p>
-              </div>
-              <div className="quick-card" onClick={() => {}}>
-                <h3>报告生成</h3>
-                <p>按规范组装初稿，自动附引用</p>
-              </div>
+              {quickStarts.map(q => (
+                <div
+                  key={q.title}
+                  className="quick-card"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => onQuickStart?.(q.prompt)}
+                  onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') onQuickStart?.(q.prompt); }}
+                >
+                  <div className="quick-card-head">
+                    <h3>{q.title}</h3>
+                    <ArrowUpRight size={13} className="quick-card-arrow" />
+                  </div>
+                  <p>{q.desc}</p>
+                </div>
+              ))}
             </div>
           </div>
         </div>

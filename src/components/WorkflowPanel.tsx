@@ -109,7 +109,7 @@ function nodeColor(type: AgentType, s: AgentState['status']): string {
   if (s === 'done')   return 'var(--success)';
   if (s === 'error')  return 'var(--error)';
   if (s === 'retry')  return 'var(--warning)';
-  if (s === 'pending') return 'rgba(148,163,184,0.15)';
+  if (s === 'pending') return 'rgba(150,157,170,0.45)';
   return AGENT_CONFIGS[type].color; // idle / running 用专属色
 }
 
@@ -124,7 +124,7 @@ function edgeStrokeColor(
   if (['running', 'done', 'error', 'retry'].includes(targetState)) {
     return AGENT_CONFIGS[t].color;
   }
-  return 'rgba(148,163,184,0.25)';
+  return 'rgba(150,157,170,0.40)';
 }
 
 /** 连线是否"活"（显示实线 + 光点流动） */
@@ -175,6 +175,7 @@ function PlanBlock({ plan }: { plan: Plan | null }) {
       >
         <Activity size={12} />
         <span style={{ flex: 1 }}>执行计划</span>
+        <span className="plan-count">{plan.tasks.length} 步</span>
         {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
       </div>
       <div className="plan-intent">{plan.description}</div>
@@ -319,7 +320,7 @@ function TopologySvg({ agents, timelineEvents, activeCitation }: TopologySvgProp
                       x={-28} y={-7}
                       width={56} height={14}
                       rx={3}
-                      fill="rgba(12,18,32,0.88)"
+                      fill="#2b2f36"
                       stroke="var(--brand)"
                       strokeWidth={0.75}
                       opacity={opacity}
@@ -377,7 +378,7 @@ function TopologySvg({ agents, timelineEvents, activeCitation }: TopologySvgProp
             <circle
               cx={pos.x} cy={pos.y} r={NODE_R - 4}
               fill={col}
-              opacity={state.status === 'pending' ? 0.08 : 0.85}
+              opacity={state.status === 'pending' ? 0.18 : 0.85}
               style={state.status === 'running' ? { filter: `drop-shadow(0 0 8px ${AGENT_CONFIGS[type].color}55)` } : undefined}
             />
             {/* 状态 glyph */}
@@ -475,7 +476,7 @@ function KBRings({ kbHits, timelineEvents }: KBRingsProps) {
             return (
               <g key={layer}>
                 {/* 底层细环 */}
-                <circle cx={55} cy={55} r={r} fill="none" stroke="rgba(148,163,184,0.12)" strokeWidth={3} />
+                <circle cx={55} cy={55} r={r} fill="none" stroke="rgba(150,157,170,0.22)" strokeWidth={3} />
                 {/* 数据进度段（顺时针从 -90° 起） */}
                 <circle
                   cx={55} cy={55} r={r} fill="none"
@@ -680,71 +681,41 @@ function TimelineReplayer({ events, liveAgents, onReplayUpdate, onExit }: Timeli
 
   const progress = Math.round(((replayTs - minTs) / Math.max(maxTs - minTs, 1)) * 100);
 
+  /* 紧凑回放条：直接内嵌在拓扑卡片底部，拖动滑块时拓扑图就在上方同步变化 */
   return (
-    <div className="topo-section" style={{ background: 'rgba(22,32,52,0.50)' }}>
-      <div className="topo-section-title" style={{ marginBottom: 12 }}>
-        <Activity size={12} />
-        工作流时间轴回放
-        <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--text-tertiary)' }}>
-          回放中
-        </span>
-      </div>
-      <div style={{ padding: '0 2px' }}>
+    <div className="replay-bar">
+      <div className="replay-progress-track">
         <div
-          className="topo-section"
-          style={{ background: 'rgba(59,130,246,0.08)', padding: '6px 10px', margin: 0 }}
+          className="replay-progress-fill"
+          style={{ width: `${progress}%`, transition: autoPlay ? 'none' : 'width 100ms' }}
+        />
+      </div>
+      <div className="replay-controls">
+        <button
+          className="replay-btn primary"
+          title={autoPlay ? '暂停' : '自动重播'}
+          onClick={() => setAutoPlay(!autoPlay)}
         >
-          <div style={{
-            width: `${progress}%`, height: 3,
-            background: 'var(--brand)',
-            borderRadius: 2,
-            transition: autoPlay ? 'none' : 'width 100ms',
-          }} />
-        </div>
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 10, marginTop: 8,
-          fontFamily: "'JetBrains Mono', monospace", fontSize: 11,
-          color: 'var(--text-tertiary)',
-        }}>
-          <span>{fmt(minTs)}</span>
-          <input
-            type="range"
-            min={minTs}
-            max={maxTs}
-            value={replayTs}
-            onChange={(e) => { setAutoPlay(false); setReplayTs(parseInt(e.target.value)); }}
-            style={{
-              flex: 1, height: 4, cursor: 'pointer',
-              accentColor: 'var(--brand)',
-            }}
-          />
-          <span>{fmt(maxTs)}</span>
-        </div>
-        <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-          <button
-            className="btn"
-            style={{ padding: '4px 10px', fontSize: 12 }}
-            onClick={() => setAutoPlay(!autoPlay)}
-          >
-            {autoPlay ? <Pause size={12} /> : <Play size={12} />}
-            {autoPlay ? '暂停' : '重播'}
-          </button>
-          <button
-            className="btn"
-            style={{ padding: '4px 10px', fontSize: 12 }}
-            onClick={() => { setReplayTs(maxTs); setAutoPlay(false); }}
-          >
-            <RotateCcw size={12} />
-            回到完成
-          </button>
-          <button
-            className="btn-ghost"
-            style={{ padding: '4px 10px', fontSize: 12, marginLeft: 'auto' }}
-            onClick={onExit}
-          >
-            退出回放
-          </button>
-        </div>
+          {autoPlay ? <Pause size={12} /> : <Play size={12} />}
+        </button>
+        <button
+          className="replay-btn"
+          title="回到完成态"
+          onClick={() => { setReplayTs(maxTs); setAutoPlay(false); }}
+        >
+          <RotateCcw size={12} />
+        </button>
+        <span className="replay-time">{fmt(minTs)}</span>
+        <input
+          type="range"
+          className="replay-slider"
+          min={minTs}
+          max={maxTs}
+          value={replayTs}
+          onChange={(e) => { setAutoPlay(false); setReplayTs(parseInt(e.target.value)); }}
+        />
+        <span className="replay-time">{fmt(maxTs)}</span>
+        <button className="replay-exit" onClick={onExit}>退出</button>
       </div>
     </div>
   );
@@ -780,19 +751,57 @@ export default function WorkflowPanel({
   const displayLogs = isReplaying && replaySnapshot ? replaySnapshot.logs : logs;
   const displayKb = isReplaying && replaySnapshot ? replaySnapshot.kbHits : kbHits;
 
+  // 运行状态摘要（回放时展示快照状态）
+  const doneCount = AGENT_ORDER.filter(a => displayAgents[a].status === 'done').length;
+  const hasError = AGENT_ORDER.some(a => displayAgents[a].status === 'error');
+  const isRunning = AGENT_ORDER.some(a => ['running', 'retry'].includes(displayAgents[a].status));
+  const statusLabel = isReplaying
+    ? '回放中'
+    : hasError
+      ? '需处理'
+      : isRunning
+        ? '执行中'
+        : doneCount === AGENT_ORDER.length
+          ? '已完成'
+          : doneCount > 0
+            ? '进行中'
+            : '待命';
+  const statusTone = isReplaying
+    ? 'replay'
+    : hasError
+      ? 'error'
+      : isRunning
+        ? 'running'
+        : doneCount === AGENT_ORDER.length
+          ? 'done'
+          : 'idle';
+
   return (
     <div className="topo-panel">
       <PlanBlock plan={plan} />
 
-      {/* Agent 拓扑网络 */}
+      {/* Agent 拓扑网络 + 内嵌回放条（边拖边看） */}
       <div className="topo-section">
         <div className="topo-section-title">
           <Brain size={12} />
           Agent 拓扑
-          {isReplaying && (
-            <span style={{ marginLeft: 'auto', fontSize: 9, color: 'var(--warning)' }}>
-              回放模式
-            </span>
+          <span className={`topo-status ${statusTone}`} style={{ marginLeft: 'auto' }}>
+            <span className="topo-status-dot" />
+            {statusLabel}
+          </span>
+          {canReplay && !isReplaying && (
+            <button
+              className="replay-exit"
+              style={{ color: 'var(--brand)', display: 'inline-flex', alignItems: 'center', gap: 3 }}
+              onClick={() => {
+                const lastTs = timelineEvents[timelineEvents.length - 1].ts;
+                setReplaySnapshot(snapshotAt(timelineEvents, lastTs));
+                setIsReplaying(true);
+              }}
+            >
+              <RotateCcw size={10} />
+              回放
+            </button>
           )}
         </div>
         <TopologySvg
@@ -800,6 +809,14 @@ export default function WorkflowPanel({
           timelineEvents={timelineEvents}
           activeCitation={activeCitation}
         />
+        {isReplaying && (
+          <TimelineReplayer
+            events={timelineEvents}
+            liveAgents={agents}
+            onReplayUpdate={setReplaySnapshot}
+            onExit={() => { setIsReplaying(false); setReplaySnapshot(null); }}
+          />
+        )}
       </div>
 
       {/* 三层知识库同心环 */}
@@ -807,34 +824,6 @@ export default function WorkflowPanel({
 
       {/* 执行日志流 */}
       <LogStream logs={displayLogs} />
-
-      {/* 回放入口 / 回放面板 */}
-      {canReplay && !isReplaying && (
-        <div style={{ display: 'flex', justifyContent: 'center' }}>
-          <button
-            className="btn-ghost"
-            onClick={() => {
-              // 初始化快照为最后时刻（完成态）
-              const lastTs = timelineEvents[timelineEvents.length - 1].ts;
-              setReplaySnapshot(snapshotAt(timelineEvents, lastTs));
-              setIsReplaying(true);
-            }}
-            style={{ fontSize: 11, color: 'var(--brand)' }}
-          >
-            <RotateCcw size={11} />
-            回放工作流
-          </button>
-        </div>
-      )}
-
-      {isReplaying && (
-        <TimelineReplayer
-          events={timelineEvents}
-          liveAgents={agents}
-          onReplayUpdate={setReplaySnapshot}
-          onExit={() => { setIsReplaying(false); setReplaySnapshot(null); }}
-        />
-      )}
     </div>
   );
 }

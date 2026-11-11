@@ -354,6 +354,7 @@ export default function Home() {
             onCitationClick={setActiveCitation}
             activeCitation={activeCitation}
             citationMap={citationMap}
+            onQuickStart={(prompt) => handleSend(prompt, [])}
           />
           <div ref={messagesEndRef} />
           <ChatInput

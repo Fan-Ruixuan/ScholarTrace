@@ -299,7 +299,7 @@ async function executeParse(
   const recordIds = fallbackRecords.map(r => r.recordId);
   emit({ type: 'agent.progress', agent: 'parse', progress: 100 });
   emit({ type: 'agent.status', agent: 'parse', status: 'done', message: `解析完成，产出${fallbackRecords.length}条结构化记录` });
-  emit({ type: 'agent.output', agent: 'parse', output: `✅ 文献解析完成：提取${fallbackRecords.length}条核心观点/参数，record_id已写入L2结构化库。`, recordIds });
+  emit({ type: 'agent.output', agent: 'parse', output: `文献解析完成：提取${fallbackRecords.length}条核心观点/参数，record_id已写入L2结构化库。`, recordIds });
 
   return fallbackRecords;
 }
@@ -350,7 +350,7 @@ async function executeData(
   emit({ type: 'agent.progress', agent: 'data', progress: 100 });
   const recordIds = results.map(r => r.recordId);
   emit({ type: 'agent.status', agent: 'data', status: 'done', message: `数据处理完成，产出${results.length}份清洗结果` });
-  emit({ type: 'agent.output', agent: 'data', output: `✅ 数据处理完成：${results.map(r => `${r.rowsCleaned}行标准化，异常已标注`).join('；')}。`, recordIds });
+  emit({ type: 'agent.output', agent: 'data', output: `数据处理完成：${results.map(r => `${r.rowsCleaned}行标准化，异常已标注`).join('；')}。`, recordIds });
 
   return results;
 }
@@ -437,7 +437,7 @@ async function executeReport(
 
   emit({ type: 'agent.progress', agent: 'report', progress: 100 });
   emit({ type: 'agent.status', agent: 'report', status: 'done', message: '报告初稿生成完成' });
-  emit({ type: 'agent.output', agent: 'report', output: `✅ 报告初稿生成：约${reportText.length}字，含${citations.length}条来源标注。`, recordIds: [reportId] });
+  emit({ type: 'agent.output', agent: 'report', output: `报告初稿生成：约${reportText.length}字，含${citations.length}条来源标注。`, recordIds: [reportId] });
 
   return { reportText, reportId, citations };
 }
@@ -493,7 +493,7 @@ async function executeCheck(
 
     if (isApproved) {
       emit({ type: 'agent.status', agent: 'check', status: 'done', message: '合规校验通过' });
-      emit({ type: 'agent.output', agent: 'check', output: `✅ ${feedback}` });
+      emit({ type: 'agent.output', agent: 'check', output: `${feedback}` });
       return { approved: true, finalReport: currentReport, feedback, retries };
     }
 
@@ -501,7 +501,7 @@ async function executeCheck(
     retries++;
     if (retries > maxRetries) {
       emit({ type: 'agent.status', agent: 'check', status: 'error', message: `超限${maxRetries}次，转人工复核` });
-      emit({ type: 'agent.output', agent: 'check', output: `⚠️ ${feedback}；问题: ${issues.join('；')}。建议人工复核。` });
+      emit({ type: 'agent.output', agent: 'check', output: `${feedback}；问题: ${issues.join('；')}。建议人工复核。` });
       return { approved: false, finalReport: currentReport, feedback: `${feedback}（已超过最大重试次数，建议人工复核）`, retries };
     }
 
@@ -605,7 +605,7 @@ export function runOrchestrator(options: OrchestratorOptions): ReadableStream<Or
           emit({ type: 'agent.status', agent: 'orchestrator', status: 'done', message: '问答模式' });
           emit({
             type: 'message.delta',
-            content: `溯研平台当前以**科研工作流自动化**为核心能力。您可以：\n\n- 📄 **上传文献PDF**，我帮您批量解析核心观点\n- 📊 **上传实验数据**（CSV/Excel），我帮您清洗并标注异常\n- 📝 **一键生成规范报告**，每条结论都附带来源引用\n- ✅ **自动合规校验**，硬性格式检查 + 软性逻辑比对\n\n请上传文献或数据文件开始您的科研之旅 🚀`,
+            content: `溯研平台当前以**科研工作流自动化**为核心能力。您可以：\n\n- **上传文献PDF**，我帮您批量解析核心观点\n- **上传实验数据**（CSV/Excel），我帮您清洗并标注异常\n- **一键生成规范报告**，每条结论都附带来源引用\n- **自动合规校验**，硬性格式检查 + 软性逻辑比对\n\n请上传文献或数据文件开始您的科研之旅 `,
           });
         } else {
           // 并行/串行编排
@@ -667,7 +667,7 @@ export function runOrchestrator(options: OrchestratorOptions): ReadableStream<Or
 
             // 报告正文推送到对话流（在合规校验与执行摘要之前展示）
             if (reportText && reportText.trim()) {
-              emit({ type: 'message.delta', content: `\n\n## 📄 报告初稿\n\n${reportText}\n` });
+              emit({ type: 'message.delta', content: `\n\n## 报告初稿\n\n${reportText}\n` });
             }
           }
 
@@ -678,8 +678,8 @@ export function runOrchestrator(options: OrchestratorOptions): ReadableStream<Or
               emit,
             );
             finalReport = checkRes.finalReport;
-            emit({ type: 'message.delta', content: `\n\n---\n\n## 📋 执行摘要\n\n` });
-            emit({ type: 'message.delta', content: `- 🔵 主控调度：任务编排完成\n- 🟦 文献解析：${parseRecords.length}条结构化记录\n- 🟢 数据处理：${dataResults.length}份清洗结果\n- 🟠 报告生成：${reportText.length}字初稿\n- 🔴 合规校验：${checkRes.approved ? '✅ 通过' : '⚠️ 建议人工复核'}（重试${checkRes.retries}次）\n- 🔗 引用溯源：${allCitations.length}条来源标注\n\n` });
+            emit({ type: 'message.delta', content: `\n\n---\n\n## 执行摘要\n\n` });
+            emit({ type: 'message.delta', content: `- 主控调度：任务编排完成\n- 文献解析：${parseRecords.length}条结构化记录\n- 数据处理：${dataResults.length}份清洗结果\n- 报告生成：${reportText.length}字初稿\n- 合规校验：${checkRes.approved ? '通过' : '建议人工复核'}（重试${checkRes.retries}次）\n- 引用溯源：${allCitations.length}条来源标注\n\n` });
           } else {
             finalReport = reportText;
           }

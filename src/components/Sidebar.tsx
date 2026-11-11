@@ -3,9 +3,10 @@
 import { useState, useRef, useEffect } from 'react';
 import {
   Plus, Search, Database, FolderOpen, ChevronDown, ChevronRight,
-  Pencil, Trash2, X, Check, MoreHorizontal
+  Pencil, Trash2, X, Check, MoreHorizontal, BookOpen, Clock, ShieldCheck
 } from 'lucide-react';
 import type { Session, SessionGroup, TimelineEvent } from '@/lib/types';
+import { KB_ENTRIES, KB_LAYER_META, type KBEntry, type KBLayer } from '@/lib/knowledge-base';
 
 interface SidebarProps {
   groups: SessionGroup[];
@@ -25,7 +26,50 @@ interface SidebarProps {
   timelineEvents: TimelineEvent[];
 }
 
-/* ======== 知识库抽屉：从 timelineEvents 提取该层的访问历史 ======== */
+/* ======== 知识库详情抽屉：图层说明 + 可展开条目 + 访问记录 ======== */
+
+function KBEntryRow({
+  entry,
+  expanded,
+  onToggle,
+}: {
+  entry: KBEntry;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div className={`kb-entry ${expanded ? 'expanded' : ''}`}>
+      <div className="kb-entry-header" onClick={onToggle}>
+        <div className="kb-entry-main">
+          <div className="kb-entry-line">
+            <span className="kb-entry-id">{entry.id}</span>
+            {entry.tag && <span className="kb-entry-tag">{entry.tag}</span>}
+          </div>
+          <div className="kb-entry-title">{entry.title}</div>
+          <div className="kb-entry-meta">{entry.meta}</div>
+        </div>
+        <span className="kb-entry-caret">
+          {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+        </span>
+      </div>
+      {expanded && (
+        <div className="kb-entry-body">
+          <div className="kb-entry-excerpt">{entry.excerpt}</div>
+          {entry.fields && entry.fields.length > 0 && (
+            <div className="kb-entry-fields">
+              {entry.fields.map(f => (
+                <div className="kb-entry-field" key={f.label}>
+                  <span className="kb-entry-field-label">{f.label}</span>
+                  <span className="kb-entry-field-value">{f.value}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function KBDrawer({
   layer,
@@ -33,33 +77,110 @@ function KBDrawer({
   counts,
   onClose,
 }: {
-  layer: 'L1' | 'L2' | 'L3';
+  layer: KBLayer;
   events: TimelineEvent[];
   counts: { l1: number; l2: number; l3: number };
   onClose: () => void;
 }) {
   const colorVar = layer === 'L1' ? 'var(--l1)' : layer === 'L2' ? 'var(--l2)' : 'var(--l3)';
-  const label = layer === 'L1' ? '原始文献库' : layer === 'L2' ? '结构化知识库' : '规则校验库';
+  const meta = KB_LAYER_META[layer];
   const countKey = layer.toLowerCase() as 'l1' | 'l2' | 'l3';
 
-  // 从 timeline 提取该层的访问事件
+  const [tab, setTab] = useState<'content' | 'access'>('content');
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  // Esc 关闭抽屉
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  // 本次运行写入 L2 的 record_id（去重，且不与存量条目重复）
+  const liveEntries: KBEntry[] = layer === 'L2'
+    ? Array.from(new Set(
+        events
+          .filter(e => e.kind === 'flow.pointer')
+          .map(e => (e as Extract<TimelineEvent, { kind: 'flow.pointer' }>).recordId)
+      ))
+        .filter(id => !KB_ENTRIES.L2.some(x => x.id === id))
+        .map(id => ({
+          id,
+          title: '本次运行写入的结构化记录',
+          meta: 'record_id 指针 · 运行期写入',
+          tag: '本次运行',
+          excerpt: '该记录由本次工作流产生，已通过 record_id 指针在 Agent 之间传递，可作为报告结论的溯源依据。',
+          fields: [
+            { label: '写入者', value: '解析 / 数据处理 Agent' },
+            { label: '调用方式', value: 'ID 进 ID 出，不传长文本' },
+          ],
+        }))
+    : [];
+
+  const entries = [...liveEntries, ...KB_ENTRIES[layer]];
   const accessEvents = events
     .filter(e => e.kind === 'kb.access' && e.layer === layer)
-    .slice(-30); // 最近 30 条
+    .slice(-30);
 
   return (
     <div className="kb-drawer" onClick={onClose}>
-      <div className="kb-drawer-panel" onClick={e => e.stopPropagation()}>
+      <div className="kb-drawer-panel" onClick={e => e.stopPropagation()} role="dialog" aria-label={meta.fullName}>
         <div className="kb-drawer-header">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
             <span className="kb-dot" style={{ background: colorVar, width: 10, height: 10 }} />
-            <span className="kb-drawer-title">{label}</span>
-            <span className="kb-drawer-badge">共 {counts[countKey]} 次访问</span>
+            <span className="kb-drawer-title">{meta.fullName}</span>
+            <span className="kb-drawer-badge">{entries.length} 项</span>
           </div>
-          <button className="kb-drawer-close" onClick={onClose}><X size={14} /></button>
+          <button className="kb-drawer-close" onClick={onClose} title="关闭 (Esc)"><X size={14} /></button>
         </div>
+
+        {/* 图层说明 */}
+        <div className="kb-meta">
+          <div className="kb-meta-row">
+            <span className="kb-meta-label">定位</span>
+            <span className="kb-meta-value">{meta.purpose}</span>
+          </div>
+          <div className="kb-meta-row">
+            <span className="kb-meta-label">读写</span>
+            <span className="kb-meta-value">{meta.policy}</span>
+          </div>
+          <div className="kb-meta-row">
+            <span className="kb-meta-label">格式</span>
+            <span className="kb-meta-value">{meta.format}</span>
+          </div>
+        </div>
+
+        {/* 页签 */}
+        <div className="kb-tabs">
+          <button
+            className={`kb-tab ${tab === 'content' ? 'active' : ''}`}
+            onClick={() => setTab('content')}
+          >
+            <BookOpen size={12} />
+            库内容
+            <span className="kb-tab-count">{entries.length}</span>
+          </button>
+          <button
+            className={`kb-tab ${tab === 'access' ? 'active' : ''}`}
+            onClick={() => setTab('access')}
+          >
+            <Clock size={12} />
+            访问记录
+            <span className="kb-tab-count">{counts[countKey]}</span>
+          </button>
+        </div>
+
         <div className="kb-drawer-body">
-          {accessEvents.length === 0 ? (
+          {tab === 'content' ? (
+            entries.map(entry => (
+              <KBEntryRow
+                key={entry.id}
+                entry={entry}
+                expanded={expandedId === entry.id}
+                onToggle={() => setExpandedId(expandedId === entry.id ? null : entry.id)}
+              />
+            ))
+          ) : accessEvents.length === 0 ? (
             <div className="kb-drawer-empty">
               <Database size={32} opacity={0.3} />
               暂无访问记录
@@ -70,8 +191,7 @@ function KBDrawer({
           ) : (
             accessEvents.map((e, i) => {
               const ev = e as Extract<TimelineEvent, { kind: 'kb.access' }>;
-              const date = new Date(ev.ts);
-              const timeStr = date.toLocaleTimeString('zh-CN', { hour12: false });
+              const timeStr = new Date(ev.ts).toLocaleTimeString('zh-CN', { hour12: false });
               return (
                 <div key={i} className="kb-drawer-item">
                   <span
@@ -87,10 +207,12 @@ function KBDrawer({
             })
           )}
         </div>
+
         <div className="kb-drawer-footer">
-          {layer === 'L1' && '只读底账 · 文献原文'}
-          {layer === 'L2' && '主力调用层 · 解析结构化'}
-          {layer === 'L3' && '质检依据 · 只读规则'}
+          <ShieldCheck size={11} style={{ display: 'inline', verticalAlign: -2, marginRight: 5 }} />
+          {layer === 'L1' && '只读底账 · 结论可回溯到原文页码'}
+          {layer === 'L2' && '主力调用层 · 所有 Agent 通过 record_id 读取'}
+          {layer === 'L3' && '质检依据 · 硬性格式校验 + 软性语义比对'}
         </div>
       </div>
     </div>
@@ -312,10 +434,12 @@ export default function Sidebar({
                 key={layer}
                 className={`kb-layer ${active ? 'active' : ''}`}
                 onClick={() => onKbDrawer(active ? null : layer)}
+                title={`查看${label}详情`}
               >
                 <span className="kb-dot" style={{ background: colorVar }} />
                 <span className="kb-layer-label">{label}</span>
                 <span className="kb-count">{kbCounts[countKey]}</span>
+                <ChevronRight size={12} className="kb-layer-caret" />
               </div>
             );
           })}
@@ -405,6 +529,26 @@ export default function Sidebar({
               </button>
             )}
           </div>
+        </div>
+
+        {/* 底部工作区概览 */}
+        <div className="sidebar-footer">
+          <div className="sidebar-footer-title">工作区概览</div>
+          <div className="sidebar-footer-stats">
+            <div className="sidebar-footer-stat">
+              <span className="sidebar-footer-num">{sessions.length}</span>
+              <span className="sidebar-footer-label">任务</span>
+            </div>
+            <div className="sidebar-footer-stat">
+              <span className="sidebar-footer-num">{groups.length}</span>
+              <span className="sidebar-footer-label">课题</span>
+            </div>
+            <div className="sidebar-footer-stat">
+              <span className="sidebar-footer-num">{kbCounts.l1 + kbCounts.l2 + kbCounts.l3}</span>
+              <span className="sidebar-footer-label">知识库调用</span>
+            </div>
+          </div>
+          <div className="sidebar-footer-hint">全链路可溯源 · 引用可回溯原文</div>
         </div>
       </div>
 
