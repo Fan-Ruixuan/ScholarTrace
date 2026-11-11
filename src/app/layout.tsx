@@ -33,7 +33,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="zh-CN">
-      <body className="antialiased bg-[#f8fafc] text-slate-800">
+      <body className="antialiased">
         {children}
       </body>
     </html>

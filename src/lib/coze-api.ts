@@ -59,7 +59,9 @@ export type OrchestratorEvent =
   // 错误
   | { type: 'error'; agent?: AgentType; msg: string }
   // 完成
-  | { type: 'done' };
+  | { type: 'done' }
+  // 时间轴事件（供回放使用，由编排引擎自动同步发射）
+  | { type: 'timeline'; timeline: import('./types').TimelineEvent };
 
 export interface ExecutionPlan {
   intent: 'parse_only' | 'data_only' | 'report_only' | 'full_pipeline' | 'qa';
@@ -110,6 +112,49 @@ export interface WorkflowRunResult {
   msg?: string;
   debug_url?: string;
   error_message?: string;
+}
+
+// ============ 时间轴转换（自动同步） ============
+import type { TimelineEvent } from './types';
+
+/** 将 OrchestratorEvent 映射为 TimelineEvent（用于时间轴回放），无对应则返回 null */
+function toTimelineEvent(e: OrchestratorEvent, ts: number): TimelineEvent | null {
+  switch (e.type) {
+    case 'agent.status':
+      return { kind: 'node.status', ts, agent: e.agent, status: e.status, message: e.message };
+    case 'agent.log':
+      return { kind: 'agent.log', ts, agent: e.agent, log: e.log };
+    case 'knowledge.access':
+      return { kind: 'kb.access', ts, layer: e.layer, action: e.action, detail: e.detail };
+    case 'retry.loop':
+      return { kind: 'retry.loop', ts, toAgent: e.toAgent, reason: e.reason };
+    case 'done':
+      return { kind: 'done', ts };
+    default:
+      return null;
+  }
+}
+
+/** 根据 agent.output 推导 record_id 数据流动事件（谁完成 → 数据应该流向谁） */
+function toFlowPointer(e: Extract<OrchestratorEvent, { type: 'agent.output' }>, ts: number): TimelineEvent[] {
+  if (!e.recordIds || e.recordIds.length === 0) return [];
+  const flows: TimelineEvent[] = [];
+  const tsBase = ts;
+  e.recordIds.forEach((rid, i) => {
+    let target: AgentType | null = null;
+    if (e.agent === 'parse' || e.agent === 'data') target = 'report';
+    else if (e.agent === 'report') target = 'check';
+    if (target) {
+      flows.push({
+        kind: 'flow.pointer',
+        ts: tsBase + i * 40, // 每条 record_id 间隔 40ms，回放时看到连续多个标签飞过
+        from: e.agent,
+        to: target,
+        recordId: rid,
+      });
+    }
+  });
+  return flows;
 }
 
 // ============ 工作流调用（非流式，工作流本身较快） ============
@@ -472,9 +517,18 @@ export function runOrchestrator(options: OrchestratorOptions): ReadableStream<Or
 
   return new ReadableStream<OrchestratorEvent>({
     async start(controller) {
+      /** 主 emit：发射 OrchestratorEvent 的同时自动同步 timeline 事件（用于回放） */
       const emit = (e: OrchestratorEvent) => {
         if (signal?.aborted) return;
         controller.enqueue(e);
+        const ts = Date.now();
+        // 自动同步普通 timeline 事件
+        const te = toTimelineEvent(e, ts);
+        if (te) controller.enqueue({ type: 'timeline', timeline: te });
+        // agent.output 带 recordIds 时，自动推导 flow.pointer 数据流事件
+        if (e.type === 'agent.output' && e.recordIds) {
+          toFlowPointer(e, ts).forEach(fp => controller.enqueue({ type: 'timeline', timeline: fp }));
+        }
       };
 
       try {
