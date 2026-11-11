@@ -62,10 +62,46 @@ function edgeMidpoint(f: AgentType, t: AgentType) {
   return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
 }
 
-/** 光点位置：根据 0-1 相位沿连线插值 */
+/** 沿直线插值的光点位置（旧函数，保留给 fallback） */
 function dotPos(f: AgentType, t: AgentType, phase: number) {
   const a = NODE_POS[f], b = NODE_POS[t];
   return { x: a.x + (b.x - a.x) * phase, y: a.y + (b.y - a.y) * phase };
+}
+
+/** 生成柔和贝塞尔曲线路径（让拓扑图不生硬） */
+function bezierPath(f: AgentType, t: AgentType): string {
+  const a = NODE_POS[f], b = NODE_POS[t];
+  // 控制点：取两节点中点，向连线的法线方向偏移，让曲线柔和弯曲
+  const mx = (a.x + b.x) / 2;
+  const my = (a.y + b.y) / 2;
+  // 计算法线方向（旋转 90°）
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const len = Math.sqrt(dx * dx + dy * dy);
+  if (len < 1) return `M ${a.x} ${a.y} L ${b.x} ${b.y}`;
+  // 偏移量：垂直方向的微小弯曲，让曲线像实验室连接线
+  const perpX = -dy / len;
+  const perpY = dx / len;
+  const offset = 6; // 6px 轻微弯曲，不大
+  const cpx = mx + perpX * offset;
+  const cpy = my + perpY * offset;
+  return `M ${a.x} ${a.y} Q ${cpx} ${cpy} ${b.x} ${b.y}`;
+}
+
+/** 沿二次贝塞尔曲线插值的位置（给光点和 record_id 标签用） */
+function bezierPos(f: AgentType, t: AgentType, phase: number) {
+  const a = NODE_POS[f], b = NODE_POS[t];
+  const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const len = Math.sqrt(dx * dx + dy * dy);
+  if (len < 1) return { x: mx, y: my };
+  const perpX = -dy / len, perpY = dx / len;
+  const offset = 6;
+  const cpx = mx + perpX * offset, cpy = my + perpY * offset;
+  // 二次贝塞尔：B(t) = (1-t)²*a + 2(1-t)t*c + t²*b
+  const u = 1 - phase;
+  const x = u * u * a.x + 2 * u * phase * cpx + phase * phase * b.x;
+  const y = u * u * a.y + 2 * u * phase * cpy + phase * phase * b.y;
+  return { x, y };
 }
 
 /** agent 状态 → 节点填充色（CSS var，SVG 直接解析） */
@@ -229,45 +265,47 @@ function TopologySvg({ agents, timelineEvents, activeCitation }: TopologySvgProp
       width={VB_W} height={VB_H}
       viewBox={`0 0 ${VB_W} ${VB_H}`}
     >
-      {/* ============ 连线层 ============ */}
+      {/* ============ 连线层（贝塞尔曲线，柔和不生硬） ============ */}
       {EDGES.map(({ from, to }) => {
         const key = edgeKey(from, to);
         const live = isEdgeLive(from, to, agents);
         const isBeam = beamKeys.has(key);
         const phase = ((elapsed / DOT_PERIOD_MS)
-          + (from.length + to.length) * 0.07) % 1; // 每根连线独立相位偏移
+          + (from.length + to.length) * 0.07) % 1;
         const col = edgeStrokeColor(from, to, agents, isBeam);
         return (
           <g key={key}>
-            {/* 连线主线条 */}
-            <line
-              x1={NODE_POS[from].x} y1={NODE_POS[from].y}
-              x2={NODE_POS[to].x}   y2={NODE_POS[to].y}
+            {/* 贝塞尔曲线主线条 */}
+            <path
+              d={bezierPath(from, to)}
               className={`topo-line ${live ? 'active' : ''} ${isBeam ? 'beam' : ''}`}
               stroke={col}
+              strokeWidth={isBeam ? 1.75 : 1}
+              strokeLinecap="round"
               strokeDasharray={live ? '0' : '4 3'}
-              style={isBeam ? { filter: 'drop-shadow(0 0 4px var(--brand-glow))' } : undefined}
+              fill="none"
+              style={isBeam ? { filter: 'drop-shadow(0 0 5px var(--brand-glow))' } : undefined}
             />
-            {/* 流动光点（只在 live 或 beam 时出现） */}
+            {/* 流动光点（沿贝塞尔曲线） */}
             {(live || isBeam) && (() => {
-              const pos = dotPos(from, to, phase);
+              const pos = bezierPos(from, to, phase);
               return (
                 <circle
                   className="topo-dot"
-                  cx={pos.x} cy={pos.y}
+                  cx={pos.x} cy={pos.y} r={2}
                   fill={col}
                   style={{ filter: 'drop-shadow(0 0 2px currentColor)' }}
                 />
               );
             })()}
-            {/* record_id 飞传标签 */}
+            {/* record_id 飞传标签（沿贝塞尔曲线） */}
             {flowLabels
               .filter(l => l.from === from && l.to === to)
               .map(l => {
                 const age = Date.now() - l.bornAt;
                 if (age < 0 || age > l.duration) return null;
                 const phase = age / l.duration;
-                const pos = dotPos(from, to, phase);
+                const pos = bezierPos(from, to, phase);
                 const mid = edgeMidpoint(from, to);
                 // 文字方向：从 from→to 的方向角，水平连线不旋转
                 const dx = NODE_POS[to].x - NODE_POS[from].x;
@@ -304,7 +342,7 @@ function TopologySvg({ agents, timelineEvents, activeCitation }: TopologySvgProp
         );
       })}
 
-      {/* ============ 节点层（置于连线之上，最后渲染） ============ */}
+      {/* ============ 节点层（胶囊基底 + 柔和圆形） ============ */}
       {AGENT_ORDER.map(type => {
         const pos = NODE_POS[type];
         const state = agents[type];
@@ -312,23 +350,35 @@ function TopologySvg({ agents, timelineEvents, activeCitation }: TopologySvgProp
         const progress = state.progress ?? (state.status === 'done' ? 1 : state.status === 'running' ? 0.55 : 0);
         const dashOffset = NODE_CIRCUMFERENCE * (1 - Math.min(Math.max(progress, 0), 1));
         const cfg = AGENT_CONFIGS[type];
+        const glow = state.status === 'running' || state.status === 'done';
 
         return (
           <g key={type} className="topo-node">
-            {/* 外层环形进度 */}
+            {/* 底层柔光：让节点有呼吸感，不生硬 */}
+            {glow && (
+              <ellipse
+                cx={pos.x} cy={pos.y} rx={NODE_R + 4} ry={NODE_R + 2}
+                fill={AGENT_CONFIGS[type].color}
+                opacity={state.status === 'running' ? 0.12 : 0.08}
+                style={{ filter: 'blur(3px)' }}
+              />
+            )}
+            {/* 外层环形进度（stroke-linecap round 让进度条两端圆润） */}
             <circle
               cx={pos.x} cy={pos.y} r={NODE_R}
               className="topo-node-ring"
               stroke={col}
-              strokeOpacity={state.status === 'pending' ? 0.25 : 1}
+              strokeWidth={state.status === 'pending' ? 1.5 : 3}
+              strokeLinecap="round"
+              strokeOpacity={state.status === 'pending' ? 0.2 : 1}
               strokeDashoffset={dashOffset}
             />
-            {/* 内圆 */}
+            {/* 内层填充：待办状态半透明，运行/完成用专属色渐变感 */}
             <circle
-              cx={pos.x} cy={pos.y} r={NODE_R - 3}
+              cx={pos.x} cy={pos.y} r={NODE_R - 4}
               fill={col}
-              opacity={state.status === 'pending' ? 0.12 : 0.92}
-              style={state.status === 'running' ? { filter: `drop-shadow(0 0 6px ${AGENT_CONFIGS[type].color})` } : undefined}
+              opacity={state.status === 'pending' ? 0.08 : 0.85}
+              style={state.status === 'running' ? { filter: `drop-shadow(0 0 8px ${AGENT_CONFIGS[type].color}55)` } : undefined}
             />
             {/* 状态 glyph */}
             {state.status === 'pending' ? (

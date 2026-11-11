@@ -1,91 +1,422 @@
 'use client';
 
-import { useState } from 'react';
-import { Plus, Search, Database, Upload, MessageSquare, FolderOpen } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import {
+  Plus, Search, Database, FolderOpen, ChevronDown, ChevronRight,
+  Pencil, Trash2, X, Check, MoreHorizontal
+} from 'lucide-react';
+import type { Session, SessionGroup, TimelineEvent } from '@/lib/types';
 
 interface SidebarProps {
-  sessions: { id: string; title: string; active?: boolean }[];
+  groups: SessionGroup[];
+  sessions: Session[];
   currentSession: string;
-  onNewSession: () => void;
+  onNewSession: (groupId?: string) => void;
   onSelectSession: (id: string) => void;
+  onRenameSession: (id: string, title: string) => void;
+  onDeleteSession: (id: string) => void;
+  onToggleGroup: (id: string) => void;
+  onAddGroup: (name: string) => void;
+  onRenameGroup: (id: string, name: string) => void;
+  onDeleteGroup: (id: string) => void;
   kbCounts: { l1: number; l2: number; l3: number };
+  kbDrawer: 'L1' | 'L2' | 'L3' | null;
+  onKbDrawer: (layer: 'L1' | 'L2' | 'L3' | null) => void;
+  timelineEvents: TimelineEvent[];
 }
 
-export default function Sidebar({ sessions, currentSession, onNewSession, onSelectSession, kbCounts }: SidebarProps) {
+/* ======== 知识库抽屉：从 timelineEvents 提取该层的访问历史 ======== */
+
+function KBDrawer({
+  layer,
+  events,
+  counts,
+  onClose,
+}: {
+  layer: 'L1' | 'L2' | 'L3';
+  events: TimelineEvent[];
+  counts: { l1: number; l2: number; l3: number };
+  onClose: () => void;
+}) {
+  const colorVar = layer === 'L1' ? 'var(--l1)' : layer === 'L2' ? 'var(--l2)' : 'var(--l3)';
+  const label = layer === 'L1' ? '原始文献库' : layer === 'L2' ? '结构化知识库' : '规则校验库';
+  const countKey = layer.toLowerCase() as 'l1' | 'l2' | 'l3';
+
+  // 从 timeline 提取该层的访问事件
+  const accessEvents = events
+    .filter(e => e.kind === 'kb.access' && e.layer === layer)
+    .slice(-30); // 最近 30 条
+
+  return (
+    <div className="kb-drawer" onClick={onClose}>
+      <div className="kb-drawer-panel" onClick={e => e.stopPropagation()}>
+        <div className="kb-drawer-header">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span className="kb-dot" style={{ background: colorVar, width: 10, height: 10 }} />
+            <span className="kb-drawer-title">{label}</span>
+            <span className="kb-drawer-badge">共 {counts[countKey]} 次访问</span>
+          </div>
+          <button className="kb-drawer-close" onClick={onClose}><X size={14} /></button>
+        </div>
+        <div className="kb-drawer-body">
+          {accessEvents.length === 0 ? (
+            <div className="kb-drawer-empty">
+              <Database size={32} opacity={0.3} />
+              暂无访问记录
+              <div style={{ fontSize: 11, marginTop: 6, opacity: 0.5 }}>
+                执行工作流后会显示数据读写历史
+              </div>
+            </div>
+          ) : (
+            accessEvents.map((e, i) => {
+              const ev = e as Extract<TimelineEvent, { kind: 'kb.access' }>;
+              const date = new Date(ev.ts);
+              const timeStr = date.toLocaleTimeString('zh-CN', { hour12: false });
+              return (
+                <div key={i} className="kb-drawer-item">
+                  <span
+                    className="kb-drawer-action"
+                    style={{ color: ev.action === 'read' ? 'var(--brand)' : 'var(--success)' }}
+                  >
+                    {ev.action === 'read' ? '读取' : '写入'}
+                  </span>
+                  <span className="kb-drawer-detail">{ev.detail}</span>
+                  <span className="kb-drawer-time">{timeStr}</span>
+                </div>
+              );
+            })
+          )}
+        </div>
+        <div className="kb-drawer-footer">
+          {layer === 'L1' && '只读底账 · 文献原文'}
+          {layer === 'L2' && '主力调用层 · 解析结构化'}
+          {layer === 'L3' && '质检依据 · 只读规则'}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ======== 单条会话项：hover 出现操作按钮，双击重命名 ======== */
+
+function SessionItem({
+  session,
+  active,
+  onSelect,
+  onRename,
+  onDelete,
+}: {
+  session: Session;
+  active: boolean;
+  onSelect: () => void;
+  onRename: (newTitle: string) => void;
+  onDelete: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(session.title);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editing) inputRef.current?.focus();
+  }, [editing]);
+
+  const submit = () => {
+    const v = value.trim();
+    if (v && v !== session.title) onRename(v);
+    else setValue(session.title);
+    setEditing(false);
+  };
+
+  return (
+    <div
+      className={`session-item ${active ? 'active' : ''}`}
+      onClick={!editing ? onSelect : undefined}
+      onDoubleClick={() => setEditing(true)}
+    >
+      {editing ? (
+        <div className="session-edit-row" onClick={e => e.stopPropagation()}>
+          <input
+            ref={inputRef}
+            className="session-edit-input"
+            value={value}
+            onChange={e => setValue(e.target.value)}
+            onBlur={submit}
+            onKeyDown={e => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') { setValue(session.title); setEditing(false); } }}
+          />
+          <button className="session-edit-btn" onClick={submit} title="保存"><Check size={11} /></button>
+          <button className="session-edit-btn" onClick={() => { setValue(session.title); setEditing(false); }} title="取消"><X size={11} /></button>
+        </div>
+      ) : (
+        <>
+          <FolderOpen size={12} style={{ flexShrink: 0, opacity: 0.5 }} />
+          <span className="session-item-title">{session.title}</span>
+          <div className="session-item-actions">
+            <button
+              className="session-action-btn"
+              title="重命名"
+              onClick={e => { e.stopPropagation(); setEditing(true); }}
+            >
+              <Pencil size={11} />
+            </button>
+            <button
+              className="session-action-btn danger"
+              title="删除"
+              onClick={e => { e.stopPropagation(); onDelete(); }}
+            >
+              <Trash2 size={11} />
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ======== 分组标题：折叠/展开 + 新建会话 + 重命名/删除 ======== */
+
+function GroupHeader({
+  group,
+  sessionCount,
+  collapsed,
+  onToggle,
+  onAddSession,
+  onRename,
+  onDelete,
+}: {
+  group: SessionGroup;
+  sessionCount: number;
+  collapsed: boolean;
+  onToggle: () => void;
+  onAddSession: () => void;
+  onRename: (name: string) => void;
+  onDelete: () => void;
+}) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(group.name);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { if (editing) inputRef.current?.focus(); }, [editing]);
+
+  const submit = () => {
+    const v = value.trim();
+    if (v && v !== group.name) onRename(v);
+    else setValue(group.name);
+    setEditing(false);
+  };
+
+  return (
+    <div className="group-header">
+      {editing ? (
+        <input
+          ref={inputRef}
+          className="group-edit-input"
+          value={value}
+          onChange={e => setValue(e.target.value)}
+          onBlur={submit}
+          onKeyDown={e => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') { setValue(group.name); setEditing(false); } }}
+          onClick={e => e.stopPropagation()}
+        />
+      ) : (
+        <div className="group-header-left" onClick={onToggle}>
+          {collapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
+          <span className="group-color-dot" style={{ background: group.color || 'var(--text-tertiary)' }} />
+          <span className="group-name">{group.name}</span>
+          <span className="group-count">{sessionCount}</span>
+        </div>
+      )}
+      {!editing && (
+        <div className="group-header-right">
+          <button className="group-action-btn" title="新建任务在此分组" onClick={e => { e.stopPropagation(); onAddSession(); }}>
+            <Plus size={11} />
+          </button>
+          <div className="group-more-wrapper" onClick={e => e.stopPropagation()}>
+            <button className="group-action-btn" onClick={() => setMenuOpen(!menuOpen)}>
+              <MoreHorizontal size={11} />
+            </button>
+            {menuOpen && (
+              <div className="group-more-menu">
+                <div onClick={() => { setEditing(true); setMenuOpen(false); }}>重命名分组</div>
+                {group.id !== 'g-default' && (
+                  <div className="danger" onClick={() => { if (confirm(`删除分组「${group.name}」？分组下的会话将移到"未分组"。`)) { onDelete(); } setMenuOpen(false); }}>
+                    删除分组
+                  </div>
+                )}
+              </div>
+            )}
+            {menuOpen && <div className="group-more-backdrop" onClick={() => setMenuOpen(false)} />}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ======== 主组件 Sidebar ======== */
+
+export default function Sidebar({
+  groups,
+  sessions,
+  currentSession,
+  onNewSession,
+  onSelectSession,
+  onRenameSession,
+  onDeleteSession,
+  onToggleGroup,
+  onAddGroup,
+  onRenameGroup,
+  onDeleteGroup,
+  kbCounts,
+  kbDrawer,
+  onKbDrawer,
+  timelineEvents,
+}: SidebarProps) {
   const [searchText, setSearchText] = useState('');
+  const [showAddGroup, setShowAddGroup] = useState(false);
+  const [newGroupName, setNewGroupName] = useState('');
 
   const filteredSessions = sessions.filter(s =>
     s.title.toLowerCase().includes(searchText.toLowerCase())
   );
 
+  // 按分组聚合
+  const sessionsByGroup: Record<string, Session[]> = {};
+  for (const g of groups) sessionsByGroup[g.id] = [];
+  for (const s of filteredSessions) {
+    const gid = sessionsByGroup[s.groupId] ? s.groupId : 'g-default';
+    sessionsByGroup[gid] = sessionsByGroup[gid] || [];
+    sessionsByGroup[gid].push(s);
+  }
+
   return (
-    <div className="sidebar">
-      <div className="sidebar-section">
-        <button className="new-task-btn" onClick={onNewSession}>
-          <Plus size={15} />
-          新建任务
-        </button>
-      </div>
+    <>
+      <div className="sidebar">
+        {/* 顶部：新建任务大按钮 */}
+        <div className="sidebar-section">
+          <button className="new-task-btn" onClick={() => onNewSession()}>
+            <Plus size={15} />
+            新建任务
+          </button>
+        </div>
 
-      <div className="sidebar-section" style={{ paddingBottom: 12 }}>
-        <div className="sidebar-title">知识库</div>
-        <div className="kb-layer">
-          <span className="kb-dot" style={{ background: 'var(--l1)' }} />
-          L1 原始文献库
-          <span className="kb-count">{kbCounts.l1}</span>
+        {/* 三层知识库入口 */}
+        <div className="sidebar-section" style={{ paddingBottom: 12 }}>
+          <div className="sidebar-title">知识库</div>
+          {(['L1', 'L2', 'L3'] as const).map(layer => {
+            const colorVar = layer === 'L1' ? 'var(--l1)' : layer === 'L2' ? 'var(--l2)' : 'var(--l3)';
+            const label = layer === 'L1' ? '原始文献库' : layer === 'L2' ? '结构化库' : '规则校验库';
+            const countKey = layer.toLowerCase() as 'l1' | 'l2' | 'l3';
+            const active = kbDrawer === layer;
+            return (
+              <div
+                key={layer}
+                className={`kb-layer ${active ? 'active' : ''}`}
+                onClick={() => onKbDrawer(active ? null : layer)}
+              >
+                <span className="kb-dot" style={{ background: colorVar }} />
+                <span className="kb-layer-label">{label}</span>
+                <span className="kb-count">{kbCounts[countKey]}</span>
+              </div>
+            );
+          })}
         </div>
-        <div className="kb-layer">
-          <span className="kb-dot" style={{ background: 'var(--l2)' }} />
-          L2 结构化库
-          <span className="kb-count">{kbCounts.l2}</span>
-        </div>
-        <div className="kb-layer">
-          <span className="kb-dot" style={{ background: 'var(--l3)' }} />
-          L3 规则校验库
-          <span className="kb-count">{kbCounts.l3}</span>
-        </div>
-      </div>
 
-      <div className="sidebar-section" style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: 0, borderBottom: 'none', overflow: 'hidden' }}>
-        <div style={{ padding: '12px 14px 8px' }}>
-          <div className="sidebar-title" style={{ marginBottom: 8 }}>历史任务</div>
-          <div style={{ position: 'relative' }}>
-            <Search size={12} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)' }} />
+        {/* 会话分组列表 */}
+        <div className="sidebar-section sidebar-session-section">
+          <div className="sidebar-search-wrap">
+            <Search size={12} className="sidebar-search-icon" />
             <input
-              type="text"
-              placeholder="搜索..."
+              className="sidebar-search-input"
+              placeholder="搜索任务..."
               value={searchText}
-              onChange={(e) => setSearchText(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '5px 8px 5px 26px',
-                border: '1px solid var(--border)',
-                borderRadius: 5,
-                background: 'var(--bg-primary)',
-                fontSize: 12,
-                outline: 'none',
-                color: 'var(--text-primary)',
-              }}
+              onChange={e => setSearchText(e.target.value)}
             />
           </div>
-        </div>
-        <div className="session-list">
-          {filteredSessions.length === 0 && (
-            <div style={{ textAlign: 'center', padding: 20, fontSize: 12, color: 'var(--text-tertiary)' }}>
-              暂无历史任务
-            </div>
-          )}
-          {filteredSessions.map((s) => (
-            <div
-              key={s.id}
-              className={`session-item ${s.id === currentSession || s.active ? 'active' : ''}`}
-              onClick={() => onSelectSession(s.id)}
-            >
-              {s.title}
-            </div>
-          ))}
+
+          <div className="sidebar-groups">
+            {groups.map(g => {
+              const groupSessions = (sessionsByGroup[g.id] || []).sort((a, b) => b.createdAt - a.createdAt);
+              if (searchText && groupSessions.length === 0) return null;
+              return (
+                <div key={g.id} className="sidebar-group">
+                  <GroupHeader
+                    group={g}
+                    sessionCount={groupSessions.length}
+                    collapsed={g.collapsed}
+                    onToggle={() => onToggleGroup(g.id)}
+                    onAddSession={() => onNewSession(g.id)}
+                    onRename={name => onRenameGroup(g.id, name)}
+                    onDelete={() => onDeleteGroup(g.id)}
+                  />
+                  {!g.collapsed && (
+                    <div className="sidebar-group-sessions">
+                      {groupSessions.length === 0 ? (
+                        <div className="sidebar-empty-group">
+                          暂无任务
+                          <button onClick={() => onNewSession(g.id)} className="sidebar-empty-add">
+                            <Plus size={10} />
+                            新建
+                          </button>
+                        </div>
+                      ) : groupSessions.map(s => (
+                        <SessionItem
+                          key={s.id}
+                          session={s}
+                          active={s.id === currentSession}
+                          onSelect={() => onSelectSession(s.id)}
+                          onRename={title => onRenameSession(s.id, title)}
+                          onDelete={() => { if (confirm(`删除「${s.title}」？`)) onDeleteSession(s.id); }}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+
+            {/* 新建分组 */}
+            {showAddGroup ? (
+              <div className="add-group-form">
+                <input
+                  className="add-group-input"
+                  placeholder="课题方向名称..."
+                  value={newGroupName}
+                  onChange={e => setNewGroupName(e.target.value)}
+                  autoFocus
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') {
+                      const v = newGroupName.trim();
+                      if (v) { onAddGroup(v); setNewGroupName(''); }
+                      setShowAddGroup(false);
+                    }
+                    if (e.key === 'Escape') { setShowAddGroup(false); setNewGroupName(''); }
+                  }}
+                />
+                <button className="add-group-submit" onClick={() => {
+                  const v = newGroupName.trim();
+                  if (v) { onAddGroup(v); setNewGroupName(''); }
+                  setShowAddGroup(false);
+                }}><Check size={11} /></button>
+              </div>
+            ) : (
+              <button className="add-group-btn" onClick={() => setShowAddGroup(true)}>
+                <Plus size={11} />
+                新建课题分组
+              </button>
+            )}
+          </div>
         </div>
       </div>
-    </div>
+
+      {/* 知识库抽屉（右侧弹出） */}
+      {kbDrawer && (
+        <KBDrawer
+          layer={kbDrawer}
+          events={timelineEvents}
+          counts={kbCounts}
+          onClose={() => onKbDrawer(null)}
+        />
+      )}
+    </>
   );
 }

@@ -122,3 +122,20 @@ export type TimelineEvent =
       kind: 'done';
       ts: number;
     };
+
+// ============ 课题分组 / 会话类型 ============
+
+export interface Session {
+  id: string;
+  title: string;
+  groupId: string;
+  active?: boolean;
+  createdAt: number;
+}
+
+export interface SessionGroup {
+  id: string;
+  name: string;
+  collapsed: boolean;
+  color?: string;
+}

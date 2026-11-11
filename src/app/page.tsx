@@ -7,7 +7,7 @@ import MessageList from '@/components/MessageList';
 import ChatInput from '@/components/ChatInput';
 import WorkflowPanel from '@/components/WorkflowPanel';
 import { orchestratorChat, type OrchestratorEvent } from '@/lib/coze-api';
-import type { Message, AgentState, AgentType, Plan, AgentLog, Citation, TimelineEvent } from '@/lib/types';
+import type { Message, AgentState, AgentType, Plan, AgentLog, Citation, TimelineEvent, Session, SessionGroup } from '@/lib/types';
 import { AGENT_CONFIGS } from '@/lib/agent-config';
 
 const INITIAL_AGENTS: Record<AgentType, AgentState> = {
@@ -32,10 +32,23 @@ export default function Home() {
   const [activeCitation, setActiveCitation] = useState<string | null>(null);
   const [citationMap, setCitationMap] = useState<Map<string, Citation>>(new Map());
   const [apiConfigured, setApiConfigured] = useState(true);
-  const [sessions, setSessions] = useState([
-    { id: 'default', title: '新建任务', active: true },
+
+  // 课题分组（两层结构：分组 → 会话）
+  const [groups, setGroups] = useState<SessionGroup[]>([
+    { id: 'g-default', name: '未分组', collapsed: false, color: '#64748b' },
+    { id: 'g-quantum', name: '量子计算方向', collapsed: false, color: '#3b82f6' },
+    { id: 'g-materials', name: '材料科学', collapsed: true, color: '#22c55e' },
   ]);
-  const [currentSession, setCurrentSession] = useState('default');
+  const [sessions, setSessions] = useState<Session[]>([
+    { id: 's-new', title: '新建任务', groupId: 'g-default', active: true, createdAt: Date.now() },
+    { id: 's-quantum-1', title: '量子纠缠态规模化制备调研', groupId: 'g-quantum', createdAt: Date.now() - 86400000 },
+    { id: 's-quantum-2', title: '表面码纠错方案综述', groupId: 'g-quantum', createdAt: Date.now() - 172800000 },
+    { id: 's-materials-1', title: '钙钛矿太阳能电池效率提升', groupId: 'g-materials', createdAt: Date.now() - 259200000 },
+  ]);
+  const [currentSession, setCurrentSession] = useState('s-new');
+
+  // 知识库抽屉：null = 关闭，'L1' | 'L2' | 'L3' = 打开对应层
+  const [kbDrawer, setKbDrawer] = useState<'L1' | 'L2' | 'L3' | null>(null);
   const [reportContent, setReportContent] = useState('');
   const [timelineEvents, setTimelineEvents] = useState<TimelineEvent[]>([]); // 时间轴回放数据源
 
@@ -229,16 +242,68 @@ export default function Home() {
     abortRef.current?.abort();
   };
 
-  const handleNewSession = () => {
+  const handleNewSession = (groupId?: string) => {
     if (isStreaming) return;
     resetAgents();
     setMessages([]);
     setCitationMap(new Map());
     setActiveCitation(null);
     setReportContent('');
+    const gid = groupId || 'g-default';
     const id = `s-${Date.now()}`;
-    setSessions([{ id, title: '新建任务', active: true }, ...sessions.map(s => ({ ...s, active: false }))]);
+    const newSession: Session = { id, title: '新建任务', groupId: gid, active: true, createdAt: Date.now() };
+    setSessions(prev => [newSession, ...prev.map(s => ({ ...s, active: false }))]);
     setCurrentSession(id);
+  };
+
+  const handleSelectSession = (id: string) => {
+    if (isStreaming) return;
+    // 切换会话 = 重置整个工作区（简化版，后续可加"恢复历史"功能）
+    resetAgents();
+    setMessages([]);
+    setCitationMap(new Map());
+    setActiveCitation(null);
+    setReportContent('');
+    setSessions(prev => prev.map(s => ({ ...s, active: s.id === id })));
+    setCurrentSession(id);
+  };
+
+  const handleRenameSession = (id: string, newTitle: string) => {
+    setSessions(prev => prev.map(s => s.id === id ? { ...s, title: newTitle } : s));
+  };
+
+  const handleDeleteSession = (id: string) => {
+    setSessions(prev => {
+      const filtered = prev.filter(s => s.id !== id);
+      if (id === currentSession && filtered.length > 0) {
+        // 删除当前会话后，激活同分组下第一个
+        const first = filtered[0];
+        setCurrentSession(first.id);
+        return filtered.map((s, i) => ({ ...s, active: i === 0 }));
+      }
+      return filtered;
+    });
+    if (id === currentSession) resetAgents();
+  };
+
+  const handleToggleGroup = (id: string) => {
+    setGroups(prev => prev.map(g => g.id === id ? { ...g, collapsed: !g.collapsed } : g));
+  };
+
+  const handleAddGroup = (name: string) => {
+    const palette = ['#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#a855f7', '#14b8a6', '#ec4899'];
+    const id = `g-${Date.now()}`;
+    setGroups(prev => [...prev, { id, name, collapsed: false, color: palette[prev.length % palette.length] }]);
+  };
+
+  const handleRenameGroup = (id: string, name: string) => {
+    setGroups(prev => prev.map(g => g.id === id ? { ...g, name } : g));
+  };
+
+  const handleDeleteGroup = (id: string) => {
+    // 分组下的会话移到"未分组"
+    setSessions(prev => prev.map(s => s.groupId === id ? { ...s, groupId: 'g-default' } : s));
+    setGroups(prev => prev.filter(g => g.id !== id));
   };
 
   const handleExport = () => {
@@ -265,14 +330,21 @@ export default function Home() {
       />
       <div className="app-layout">
         <Sidebar
+          groups={groups}
           sessions={sessions}
           currentSession={currentSession}
           onNewSession={handleNewSession}
-          onSelectSession={(id) => {
-            setCurrentSession(id);
-            setSessions(prev => prev.map(s => ({ ...s, active: s.id === id })));
-          }}
+          onSelectSession={handleSelectSession}
+          onRenameSession={handleRenameSession}
+          onDeleteSession={handleDeleteSession}
+          onToggleGroup={handleToggleGroup}
+          onAddGroup={handleAddGroup}
+          onRenameGroup={handleRenameGroup}
+          onDeleteGroup={handleDeleteGroup}
           kbCounts={kbHits}
+          kbDrawer={kbDrawer}
+          onKbDrawer={setKbDrawer}
+          timelineEvents={timelineEvents}
         />
         <div className="main-area">
           <MessageList
