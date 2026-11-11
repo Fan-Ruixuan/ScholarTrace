@@ -1,5 +1,20 @@
 import type { Metadata } from 'next';
+import { Inter, JetBrains_Mono } from 'next/font/google';
 import './globals.css';
+
+const inter = Inter({
+  subsets: ['latin'],
+  weight: ['400', '500', '600'],
+  variable: '--font-inter',
+});
+
+const jetbrains = JetBrains_Mono({
+  subsets: ['latin'],
+  weight: ['400', '500'],
+  variable: '--font-mono',
+});
+
+// 中文用系统字体 Noto Sans SC / PingFang SC 自动 fallback
 
 export const metadata: Metadata = {
   title: {
@@ -33,7 +48,13 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="zh-CN">
-      <body className="antialiased">
+      <body
+        className={`antialiased ${inter.variable} ${jetbrains.variable}`}
+        style={{
+          fontFamily:
+            'var(--font-inter), "Noto Sans SC", -apple-system, BlinkMacSystemFont, sans-serif',
+        }}
+      >
         {children}
       </body>
     </html>

@@ -7,7 +7,7 @@ import MessageList from '@/components/MessageList';
 import ChatInput from '@/components/ChatInput';
 import WorkflowPanel from '@/components/WorkflowPanel';
 import { orchestratorChat, type OrchestratorEvent } from '@/lib/coze-api';
-import type { Message, AgentState, AgentType, Plan, AgentLog, Citation } from '@/lib/types';
+import type { Message, AgentState, AgentType, Plan, AgentLog, Citation, TimelineEvent } from '@/lib/types';
 import { AGENT_CONFIGS } from '@/lib/agent-config';
 
 const INITIAL_AGENTS: Record<AgentType, AgentState> = {
@@ -37,6 +37,7 @@ export default function Home() {
   ]);
   const [currentSession, setCurrentSession] = useState('default');
   const [reportContent, setReportContent] = useState('');
+  const [timelineEvents, setTimelineEvents] = useState<TimelineEvent[]>([]); // 时间轴回放数据源
 
   const abortRef = useRef<AbortController | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -64,6 +65,7 @@ export default function Home() {
     setStreamingContent('');
     setStreamingThinking('');
     setReportContent('');
+    setTimelineEvents([]); // 同时清空时间轴
     msgCitationCounterRef.current = 0;
     streamContentRef.current = '';
   };
@@ -200,6 +202,9 @@ export default function Home() {
                 return next;
               });
               break;
+            case 'timeline':
+              setTimelineEvents(prev => [...prev, event.timeline]);
+              break;
           }
         },
         abortController.signal
@@ -291,6 +296,7 @@ export default function Home() {
           logs={logs}
           kbHits={kbHits}
           activeCitation={activeCitation}
+          timelineEvents={timelineEvents}
         />
       </div>
     </div>

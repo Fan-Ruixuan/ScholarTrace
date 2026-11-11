@@ -1,5 +1,4 @@
 @import "tailwindcss";
-@import "https://fonts.googleapis.cn/css2?family=Inter:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap";
 
 /* =========================================================================
    溯研 · 方向B视觉系统 —— 深色玻璃拟态 + 荧光数据流
@@ -58,6 +57,17 @@
   --t-fast: 150ms;
   --t-med: 200ms;
   --t-slow: 300ms;
+
+  /* ---- 兼容性映射（旧 token 名 → 新 token 值，供未重写组件过渡使用） ---- */
+  --bg-primary: var(--bg-app);
+  --bg-secondary: var(--bg-panel);
+  --bg-tertiary: rgba(22,32,52,0.60);
+  --border: var(--border-glass);
+  --border-active: var(--border-glass-strong);
+  --brand-light: rgba(59,130,246,0.15);
+  --success-light: rgba(34,211,238,0.10);
+  --warning-light: rgba(251,191,36,0.10);
+  --error-light: rgba(248,113,113,0.10);
 }
 
 /* ---- 全局 reset ---- */

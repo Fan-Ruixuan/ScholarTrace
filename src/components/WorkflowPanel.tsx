@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Brain, Check, AlertCircle, Loader2, Circle, Layers, Activity } from 'lucide-react';
-import type { AgentState, AgentType, Plan, AgentLog, PlanTask } from '@/lib/types';
+import type { AgentState, AgentType, Plan, AgentLog, PlanTask, TimelineEvent } from '@/lib/types';
 import { AGENT_CONFIGS } from '@/lib/agent-config';
 
 interface WorkflowPanelProps {
@@ -9,6 +9,7 @@ interface WorkflowPanelProps {
   logs: AgentLog[];
   kbHits: { l1: number; l2: number; l3: number };
   activeCitation: string | null;
+  timelineEvents: TimelineEvent[];
 }
 
 interface TopologyPanelProps {
