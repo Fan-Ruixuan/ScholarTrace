@@ -1,6 +1,9 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import { Download, X } from 'lucide-react';
 import Sidebar from '@/components/Sidebar';
 import TopBar from '@/components/TopBar';
 import MessageList from '@/components/MessageList';
@@ -50,6 +53,7 @@ export default function Home() {
   // 知识库抽屉：null = 关闭，'L1' | 'L2' | 'L3' = 打开对应层
   const [kbDrawer, setKbDrawer] = useState<'L1' | 'L2' | 'L3' | null>(null);
   const [reportContent, setReportContent] = useState('');
+  const [showReport, setShowReport] = useState(false);
   const [timelineEvents, setTimelineEvents] = useState<TimelineEvent[]>([]); // 时间轴回放数据源
 
   const abortRef = useRef<AbortController | null>(null);
@@ -157,10 +161,6 @@ export default function Home() {
               break;
             case 'agent.log':
               addLog(event.agent, event.log);
-              break;
-            case 'agent.output':
-              // 工作流完成产出
-              appendContent('\n' + event.output + '\n');
               break;
             case 'thinking':
               setStreamingThinking(event.content);
@@ -306,12 +306,17 @@ export default function Home() {
     setGroups(prev => prev.filter(g => g.id !== id));
   };
 
+  // 先预览，再由用户确认下载
   const handleExport = () => {
-    const content = reportContent || streamingContent;
-    if (!content) {
+    if (!reportContent && !streamingContent) {
       alert('暂无报告内容可导出');
       return;
     }
+    setShowReport(true);
+  };
+
+  const downloadReport = () => {
+    const content = reportContent || streamingContent;
     const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -320,6 +325,14 @@ export default function Home() {
     a.click();
     URL.revokeObjectURL(url);
   };
+
+  // 报告预览弹窗：Esc 关闭
+  useEffect(() => {
+    if (!showReport) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setShowReport(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [showReport]);
 
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -373,6 +386,33 @@ export default function Home() {
           citationCount={citationMap.size}
         />
       </div>
+
+      {showReport && (
+        <div className="report-overlay" onClick={() => setShowReport(false)}>
+          <div className="report-modal" onClick={e => e.stopPropagation()}>
+            <div className="report-modal-head">
+              <div>
+                <div className="report-modal-eyebrow">REPORT PREVIEW</div>
+                <h2>报告预览</h2>
+              </div>
+              <div className="report-modal-actions">
+                <button className="report-download-btn" onClick={downloadReport}>
+                  <Download size={13} />
+                  下载 Markdown
+                </button>
+                <button className="report-close-btn" onClick={() => setShowReport(false)} aria-label="关闭预览">
+                  <X size={15} />
+                </button>
+              </div>
+            </div>
+            <div className="report-modal-body">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {reportContent || streamingContent}
+              </ReactMarkdown>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

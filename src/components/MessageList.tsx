@@ -26,6 +26,32 @@ function AgentAvatar({ agent = 'orchestrator' }: { agent?: string }) {
   );
 }
 
+/** 消息时间（HH:mm） */
+function fmtTime(iso?: string) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+}
+
+/** Agent 消息身份条：谁在说、处于什么角色 */
+function AgentHead({ time, live = false }: { time?: string; live?: boolean }) {
+  return (
+    <div className="msg-head">
+      <span className="msg-head-name">溯研主控</span>
+      <span className="msg-head-role">ORCHESTRATOR</span>
+      {live ? (
+        <span className="msg-head-live">
+          <span className="msg-head-live-dot" />
+          生成中
+        </span>
+      ) : (
+        <span className="msg-head-time">{time}</span>
+      )}
+    </div>
+  );
+}
+
 function UserAvatar() {
   return (
     <div className="message-avatar user">
@@ -256,17 +282,26 @@ export default function MessageList({
 
     const msgCitations: Citation[] = [];
     const usedIds = new Set<string>();
+    const knownCitations = Array.from(citationMap.values());
     let citationIdx = 0;
 
     let processed = content;
     let sm;
     while ((sm = sourceRegex.exec(content)) !== null) {
       const docId = sm[1], page = sm[2];
-      const citId = `${msgId}-${docId}-${page}`;
+      // 优先复用事件流里的引用 id，保证点击能命中 citationMap
+      const matched = knownCitations.find(c => c.docId === docId && String(c.page) === page);
+      const citId = matched?.id ?? `${msgId}-${docId}-${page}`;
       if (usedIds.has(citId)) continue;
       usedIds.add(citId);
       citationIdx++;
-      msgCitations.push({ id: citId, index: citationIdx, docId, page, snippet: '' });
+      msgCitations.push({
+        id: citId,
+        index: citationIdx,
+        docId,
+        page,
+        snippet: matched?.snippet ?? '',
+      });
       processed = processed.replace(sm[0], `%%CIT:${citationIdx}%%`);
     }
     // 如果内容里已有 [n] 格式（模拟返回），也收集
@@ -394,15 +429,16 @@ export default function MessageList({
           <div className="welcome">
             <div className="welcome-eyebrow">MULTI-AGENT RESEARCH WORKBENCH</div>
             <h1>让每条结论，都能溯回原文</h1>
-            <p>
-              上传文献与实验数据，主控调度四类 Agent 完成解析、清洗、写作与合规校验；
-              所有产出通过 record_id 指针与引用标记全程可追溯。
-            </p>
+            <p>上传文献与实验数据，其余交给主控 Agent。</p>
             <div className="welcome-caps">
-              <span>三层知识库</span>
-              <span>record_id 指针</span>
-              <span>引用可溯源</span>
-              <span>校验闭环</span>
+              {[
+                { label: '三层知识库', tip: 'L1 原始文献 / L2 结构化记录 / L3 校验规则，三层隔离' },
+                { label: 'record_id 指针', tip: 'Agent 之间只传指针，不传长文本，降低上下文污染' },
+                { label: '引用可溯源', tip: '每条结论附来源，点击 [n] 可回溯原文片段' },
+                { label: '校验闭环', tip: '格式硬校验 + 逻辑软校验，不合格自动打回重试' },
+              ].map(c => (
+                <span key={c.label} className="tip" data-tip={c.tip} tabIndex={0}>{c.label}</span>
+              ))}
             </div>
             <div className="quick-cards">
               {quickStarts.map(q => (
@@ -435,6 +471,7 @@ export default function MessageList({
           <div key={msg.id} className={`message-row ${msg.role}`}>
             {msg.role === 'agent' && <AgentAvatar agent={msg.agent} />}
             <div className={`message-bubble ${msg.role}`}>
+              {msg.role === 'agent' && <AgentHead time={fmtTime(msg.timestamp)} />}
               {msg.thinking && (
                 <div className="thinking-bubble" style={{ marginBottom: 6 }}>
                   <span className="thinking-dots"><span /><span /><span /></span>
@@ -452,6 +489,7 @@ export default function MessageList({
           <div className="message-row agent">
             <AgentAvatar />
             <div className="message-bubble agent">
+              <AgentHead live />
               <ReactMarkdown remarkPlugins={[remarkGfm]}>
                 {streamingContent}
               </ReactMarkdown>

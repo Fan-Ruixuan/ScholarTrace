@@ -173,6 +173,7 @@ function PlanBlock({ plan }: { plan: Plan | null }) {
         style={{ cursor: 'pointer', userSelect: 'none' }}
         onClick={() => setOpen(!open)}
       >
+        <span className="sec-index">01</span>
         <Activity size={12} />
         <span style={{ flex: 1 }}>执行计划</span>
         <span className="plan-count">{plan.tasks.length} 步</span>
@@ -459,6 +460,7 @@ function KBRings({ kbHits, timelineEvents }: KBRingsProps) {
   return (
     <div className="topo-section">
       <div className="topo-section-title">
+        <span className="sec-index">04</span>
         <Layers size={12} />
         知识库
       </div>
@@ -534,7 +536,7 @@ function LogStream({ logs }: { logs: AgentLog[] }) {
   if (recent.length === 0) return null;
   return (
     <div className="topo-section">
-      <div className="topo-section-title">执行日志</div>
+      <div className="topo-section-title"><span className="sec-index">06</span>执行日志</div>
       <div className="log-list">
         {recent.map((log, i) => {
           const cfg = AGENT_CONFIGS[log.agent];
@@ -754,15 +756,16 @@ function RunMetrics({
   const kbReads = events.filter(e => e.kind === 'kb.access').length;
 
   const tiles = [
-    { label: '耗时', value: duration > 0 ? duration.toFixed(1) : '—', unit: 's' },
-    { label: '并行峰值', value: peak > 0 ? String(peak) : '—', unit: 'Agent' },
-    { label: 'record 指针', value: pointers > 0 ? String(pointers) : '—', unit: '条' },
-    { label: '引用标注', value: citationCount > 0 ? String(citationCount) : '—', unit: '处' },
+    { label: '耗时', value: duration > 0 ? duration.toFixed(1) : '—', unit: 's', ratio: duration / 12 },
+    { label: '并行峰值', value: peak > 0 ? String(peak) : '—', unit: 'Agent', ratio: peak / 4 },
+    { label: 'record 指针', value: pointers > 0 ? String(pointers) : '—', unit: '条', ratio: pointers / 8 },
+    { label: '引用标注', value: citationCount > 0 ? String(citationCount) : '—', unit: '处', ratio: citationCount / 12 },
   ];
 
   return (
     <div className="topo-section">
       <div className="topo-section-title">
+        <span className="sec-index">03</span>
         <Gauge size={12} />
         运行指标
         <span className="tech-label">RUN METRICS</span>
@@ -775,6 +778,12 @@ function RunMetrics({
               <span className="metric-unit">{t.unit}</span>
             </div>
             <div className="metric-label">{t.label}</div>
+            <span className="metric-bar">
+              <span
+                className="metric-bar-fill"
+                style={{ width: `${Math.round(Math.min(Math.max(t.ratio, 0), 1) * 100)}%` }}
+              />
+            </span>
           </div>
         ))}
       </div>
@@ -835,15 +844,17 @@ function ArchitectureStack({
   return (
     <div className="topo-section">
       <div className="topo-section-title">
+        <span className="sec-index">05</span>
         <Layers size={12} />
         五层架构
         <span className="tech-label">ARCHITECTURE</span>
       </div>
       <div className="arch-stack">
-        {ARCH_LAYERS.map(layer => {
+        {ARCH_LAYERS.map((layer, i) => {
           const active = layer.key === activeKey;
           return (
             <div className={`arch-row ${active ? 'active' : ''}`} key={layer.key}>
+              <span className="arch-idx">{String(i + 1).padStart(2, '0')}</span>
               <span className="arch-dot" />
               <div className="arch-main">
                 <div className="arch-name">
@@ -929,6 +940,7 @@ export default function WorkflowPanel({
       <div className="topo-section">
         {statusTone === 'running' && <div className="topo-scan" aria-hidden />}
         <div className="topo-section-title">
+          <span className="sec-index">02</span>
           <Brain size={12} />
           Agent 拓扑
           <span className={`topo-status ${statusTone}`} style={{ marginLeft: 'auto' }}>

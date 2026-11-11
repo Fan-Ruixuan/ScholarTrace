@@ -1,6 +1,6 @@
 'use client';
 
-import { Download, Wifi, WifiOff } from 'lucide-react';
+import { Download, Wifi, WifiOff, FolderOpen } from 'lucide-react';
 
 interface TopBarProps {
   apiConfigured: boolean;
@@ -38,14 +38,18 @@ export default function TopBar({ apiConfigured, onExport, sessionTitle }: TopBar
         <span className="logo-sub">SCHOLAR TRACE</span>
         {sessionTitle && (
           <>
-            <span style={{ color: 'var(--border-active)', margin: '0 6px', fontWeight: 300 }}>/</span>
-            <span style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 400 }}>{sessionTitle}</span>
+            <span className="topbar-sep">/</span>
+            <span className="topbar-session">
+              <FolderOpen size={11} />
+              {sessionTitle}
+            </span>
           </>
         )}
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <div className={`mode-chip ${apiConfigured ? 'online' : 'offline'}`}>
+          <span className="mode-pulse" />
           {apiConfigured ? <Wifi size={12} /> : <WifiOff size={12} />}
           {apiConfigured ? 'Coze API 已连接' : '演示模式'}
         </div>

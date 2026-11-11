@@ -72,9 +72,9 @@ export default function ChatInput({ onSend, onStop, isStreaming, disabled }: Cha
   };
 
   const quickPrompts = [
-    { text: '解析文献', action: '帮我解析上传的文献' },
-    { text: '处理数据', action: '帮我清洗上传的数据并标注异常' },
-    { text: '生成报告', action: '基于已有内容生成科研报告' },
+    { text: '解析文献', action: '帮我解析上传的文献', icon: <FileText size={11} /> },
+    { text: '处理数据', action: '帮我清洗上传的数据并标注异常', icon: <Table size={11} /> },
+    { text: '生成报告', action: '基于已有内容生成科研报告', icon: <Send size={11} /> },
   ];
 
   const handleQuick = (action: string) => {
@@ -188,11 +188,12 @@ export default function ChatInput({ onSend, onStop, isStreaming, disabled }: Cha
               onClick={() => handleQuick(q.action)}
               disabled={isStreaming}
             >
+              {q.icon}
               {q.text}
             </button>
           ))}
-          <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text-tertiary)' }}>
-            Enter 发送 · Shift+Enter 换行
+          <span className="input-hint">
+            <kbd>Enter</kbd> 发送 · <kbd>Shift</kbd>+<kbd>Enter</kbd> 换行
           </span>
         </div>
       </div>

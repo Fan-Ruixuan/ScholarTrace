@@ -588,10 +588,10 @@ export function runOrchestrator(options: OrchestratorOptions): ReadableStream<Or
         emit({ type: 'agent.log', agent: 'orchestrator', log: `意图: ${plan.description}` });
         emit({ type: 'agent.log', agent: 'orchestrator', log: `执行计划: ${plan.tasks.map(t => `${t.agent}(${t.parallel ? '并行' : '串行'})`).join(' → ')}` });
 
-        // 欢迎消息
+        // 开场消息：只留一句，详细计划在右侧面板
         emit({
           type: 'message.delta',
-          content: `收到您的请求。我已识别任务意图：**${plan.description}**。\n\n下面我将调度多智能体协作执行，过程中您可以实时观察每个Agent的执行状态：\n\n`,
+          content: `已拆解为 ${plan.tasks.length} 个步骤，执行过程同步在右侧拓扑。\n\n`,
         });
 
         let finalReport = '';
