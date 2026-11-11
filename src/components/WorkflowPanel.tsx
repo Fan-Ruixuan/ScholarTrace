@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Brain, Layers, Activity, ChevronDown, ChevronRight,
-  Play, Pause, RotateCcw, Download
+  Play, Pause, RotateCcw, Download, Gauge
 } from 'lucide-react';
 import type {
   AgentState, AgentType, Plan, AgentLog, TimelineEvent
@@ -722,6 +722,148 @@ function TimelineReplayer({ events, liveAgents, onReplayUpdate, onExit }: Timeli
 }
 
 /* ============================================================================
+   子组件：RunMetrics（运行指标——对应文档中的效果量化指标）
+   ========================================================================== */
+
+function RunMetrics({
+  events,
+  citationCount,
+}: {
+  events: TimelineEvent[];
+  citationCount: number;
+}) {
+  const first = events[0]?.ts;
+  const last = events[events.length - 1]?.ts;
+  const duration = first && last && last > first ? (last - first) / 1000 : 0;
+
+  // record_id 指针去重数量（ID 进 ID 出，不传长文本）
+  const pointers = new Set(
+    events
+      .filter(e => e.kind === 'flow.pointer')
+      .map(e => (e as Extract<TimelineEvent, { kind: 'flow.pointer' }>).recordId)
+  ).size;
+
+  // 并行峰值：按 node.status 事件重放，统计同时运行的 Agent 数
+  const running = new Set<AgentType>();
+  let peak = 0;
+  for (const e of events) {
+    if (e.kind !== 'node.status') continue;
+    if (e.status === 'running' || e.status === 'retry') running.add(e.agent);
+    else running.delete(e.agent);
+    peak = Math.max(peak, running.size);
+  }
+
+  const retries = events.filter(e => e.kind === 'retry.loop').length;
+  const kbReads = events.filter(e => e.kind === 'kb.access').length;
+
+  const tiles = [
+    { label: '耗时', value: duration > 0 ? duration.toFixed(1) : '—', unit: 's' },
+    { label: '并行峰值', value: peak > 0 ? String(peak) : '—', unit: 'Agent' },
+    { label: 'record 指针', value: pointers > 0 ? String(pointers) : '—', unit: '条' },
+    { label: '引用标注', value: citationCount > 0 ? String(citationCount) : '—', unit: '处' },
+  ];
+
+  return (
+    <div className="topo-section">
+      <div className="topo-section-title">
+        <Gauge size={12} />
+        运行指标
+        <span className="tech-label">RUN METRICS</span>
+      </div>
+      <div className="metric-grid">
+        {tiles.map(t => (
+          <div className="metric-tile" key={t.label}>
+            <div className="metric-value">
+              {t.value}
+              <span className="metric-unit">{t.unit}</span>
+            </div>
+            <div className="metric-label">{t.label}</div>
+          </div>
+        ))}
+      </div>
+      <div className="metric-foot">
+        <span>重试 {retries} 次</span>
+        <span className="metric-foot-sep" />
+        <span>知识库访问 {kbReads} 次</span>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================================
+   子组件：ArchitectureStack（五层架构——文档定义的 1 底座 + 4 业务层）
+   ========================================================================== */
+
+const ARCH_LAYERS: {
+  key: string;
+  name: string;
+  desc: string;
+  tag?: string;
+}[] = [
+  { key: 'interaction', name: '交互层', desc: '对话入口 / 文件上传 / 报告导出' },
+  { key: 'orchestration', name: '调度层', desc: '主控 Agent · 意图识别 · 任务拆解', tag: '创新一' },
+  { key: 'capability', name: '能力层', desc: '解析 / 数据 / 报告 / 校验 四类 Agent' },
+  { key: 'knowledge', name: '知识层', desc: 'L1 原始库 · L2 结构化库 · L3 规则库', tag: '创新二' },
+  { key: 'support', name: '支撑层', desc: 'Coze Workflow · Plugins · 数据库' },
+];
+
+function ArchitectureStack({
+  agents,
+  expectedAgents,
+}: {
+  agents: Record<AgentType, AgentState>;
+  expectedAgents: AgentType[];
+}) {
+  const isRunning = (a: AgentType) => ['running', 'retry'].includes(agents[a].status);
+  const capabilityActive = (['parse', 'data', 'report', 'check'] as AgentType[])
+    .filter(a => expectedAgents.includes(a))
+    .some(isRunning);
+  const orchestrationActive = isRunning('orchestrator');
+  // 只统计本轮计划内的 Agent，未调度的能力不参与完成度判断
+  const started = expectedAgents.some(a =>
+    ['running', 'retry', 'done', 'error'].includes(agents[a].status)
+  );
+  const allDone = started && expectedAgents.every(a => agents[a].status === 'done');
+
+  const activeKey = capabilityActive
+    ? 'capability'
+    : orchestrationActive
+      ? 'orchestration'
+      : allDone
+        ? 'knowledge'
+        : started
+          ? 'capability'
+          : 'interaction';
+
+  return (
+    <div className="topo-section">
+      <div className="topo-section-title">
+        <Layers size={12} />
+        五层架构
+        <span className="tech-label">ARCHITECTURE</span>
+      </div>
+      <div className="arch-stack">
+        {ARCH_LAYERS.map(layer => {
+          const active = layer.key === activeKey;
+          return (
+            <div className={`arch-row ${active ? 'active' : ''}`} key={layer.key}>
+              <span className="arch-dot" />
+              <div className="arch-main">
+                <div className="arch-name">
+                  {layer.name}
+                  {layer.tag && <span className="arch-tag">{layer.tag}</span>}
+                </div>
+                <div className="arch-desc">{layer.desc}</div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================================
    主组件 WorkflowPanel —— 组装子组件 + 回放模式切换
    ========================================================================== */
 
@@ -732,6 +874,7 @@ export default function WorkflowPanel({
   kbHits,
   activeCitation,
   timelineEvents,
+  citationCount = 0,
 }: {
   plan: Plan | null;
   agents: Record<AgentType, AgentState>;
@@ -739,6 +882,7 @@ export default function WorkflowPanel({
   kbHits: { l1: number; l2: number; l3: number };
   activeCitation: string | null;
   timelineEvents: TimelineEvent[];
+  citationCount?: number;
 }) {
   const [isReplaying, setIsReplaying] = useState(false);
   const [replaySnapshot, setReplaySnapshot] = useState<ReplaySnapshot | null>(null);
@@ -751,17 +895,21 @@ export default function WorkflowPanel({
   const displayLogs = isReplaying && replaySnapshot ? replaySnapshot.logs : logs;
   const displayKb = isReplaying && replaySnapshot ? replaySnapshot.kbHits : kbHits;
 
-  // 运行状态摘要（回放时展示快照状态）
-  const doneCount = AGENT_ORDER.filter(a => displayAgents[a].status === 'done').length;
-  const hasError = AGENT_ORDER.some(a => displayAgents[a].status === 'error');
-  const isRunning = AGENT_ORDER.some(a => ['running', 'retry'].includes(displayAgents[a].status));
+  // 运行状态摘要（回放时展示快照状态）——只统计本轮计划涉及的 Agent
+  const expectedAgents: AgentType[] = plan
+    ? Array.from(new Set<AgentType>(['orchestrator', ...plan.tasks.map(t => t.agent)]))
+    : AGENT_ORDER;
+  const doneCount = expectedAgents.filter(a => displayAgents[a].status === 'done').length;
+  const hasError = expectedAgents.some(a => displayAgents[a].status === 'error');
+  const isRunning = expectedAgents.some(a => ['running', 'retry'].includes(displayAgents[a].status));
+  const allDone = expectedAgents.length > 0 && doneCount === expectedAgents.length && timelineEvents.length > 0;
   const statusLabel = isReplaying
     ? '回放中'
     : hasError
       ? '需处理'
       : isRunning
         ? '执行中'
-        : doneCount === AGENT_ORDER.length
+        : allDone
           ? '已完成'
           : doneCount > 0
             ? '进行中'
@@ -772,7 +920,7 @@ export default function WorkflowPanel({
       ? 'error'
       : isRunning
         ? 'running'
-        : doneCount === AGENT_ORDER.length
+        : allDone
           ? 'done'
           : 'idle';
 
@@ -782,6 +930,7 @@ export default function WorkflowPanel({
 
       {/* Agent 拓扑网络 + 内嵌回放条（边拖边看） */}
       <div className="topo-section">
+        {statusTone === 'running' && <div className="topo-scan" aria-hidden />}
         <div className="topo-section-title">
           <Brain size={12} />
           Agent 拓扑
@@ -819,8 +968,14 @@ export default function WorkflowPanel({
         )}
       </div>
 
+      {/* 运行指标（对应文档效果量化指标） */}
+      <RunMetrics events={timelineEvents} citationCount={citationCount} />
+
       {/* 三层知识库同心环 */}
       <KBRings kbHits={displayKb} timelineEvents={timelineEvents} />
+
+      {/* 五层架构（1 底座 + 4 业务层） */}
+      <ArchitectureStack agents={displayAgents} expectedAgents={expectedAgents} />
 
       {/* 执行日志流 */}
       <LogStream logs={displayLogs} />

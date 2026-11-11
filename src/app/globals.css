@@ -1549,3 +1549,180 @@ code, .mono {
   padding: 1px 7px;
   margin-right: 2px;
 }
+
+/* =========================================================================
+   科技感细节：等宽标签 / 扫描线 / 蓝图刻度
+   ========================================================================= */
+.tech-label {
+  margin-left: auto;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 8.5px;
+  font-weight: 500;
+  letter-spacing: 1.3px;
+  color: var(--text-tertiary);
+  opacity: 0.55;
+  white-space: nowrap;
+}
+
+/* 顶部栏底部的一道微光分界线 */
+.topbar::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; bottom: -1px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(59,91,219,0.45), transparent);
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+/* 运行中拓扑卡片的纵向扫描光带 */
+.topo-section { position: relative; overflow: hidden; }
+.topo-scan {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+.topo-scan::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0;
+  height: 42px;
+  top: -42px;
+  background: linear-gradient(180deg, transparent, rgba(59,91,219,0.075), transparent);
+  animation: scanSweep 2.8s linear infinite;
+}
+@keyframes scanSweep {
+  to { transform: translateY(420px); }
+}
+
+/* 欢迎区的蓝图刻度角标 */
+.welcome { position: relative; padding: 0 10px; }
+.welcome::before,
+.welcome::after {
+  content: '';
+  position: absolute;
+  width: 16px; height: 16px;
+  border-color: var(--brand-soft-2);
+  border-style: solid;
+  pointer-events: none;
+}
+.welcome::before {
+  top: -14px; left: 0;
+  border-width: 1px 0 0 1px;
+}
+.welcome::after {
+  bottom: -14px; right: 0;
+  border-width: 0 1px 1px 0;
+}
+
+/* =========================================================================
+   运行指标卡
+   ========================================================================= */
+.metric-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.metric-tile {
+  background: var(--bg-inset);
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 8px 10px;
+  transition: border-color var(--t-fast);
+}
+.metric-tile:hover { border-color: var(--brand-soft-2); }
+.metric-value {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--text-primary);
+}
+.metric-unit {
+  font-size: 9px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  margin-left: 3px;
+  letter-spacing: 0.3px;
+}
+.metric-label {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  margin-top: 1px;
+}
+.metric-foot {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 9px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border-subtle);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9.5px;
+  color: var(--text-tertiary);
+}
+.metric-foot-sep {
+  width: 1px; height: 9px;
+  background: var(--border-strong);
+}
+
+/* =========================================================================
+   五层架构条
+   ========================================================================= */
+.arch-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.arch-row {
+  display: flex;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 7px;
+  border-left: 2px solid transparent;
+}
+.arch-row.active {
+  background: var(--brand-soft);
+  border-left-color: var(--brand);
+}
+.arch-dot {
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--text-tertiary);
+  opacity: 0.5;
+  margin-top: 8px;
+  flex-shrink: 0;
+}
+.arch-row.active .arch-dot {
+  background: var(--brand);
+  opacity: 1;
+  box-shadow: 0 0 0 3px var(--brand-soft-2);
+  animation: pulseDot 1.6s ease-in-out infinite;
+}
+.arch-main { flex: 1; min-width: 0; }
+.arch-name {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+.arch-row.active .arch-name { color: var(--brand); }
+.arch-tag {
+  font-size: 8.5px;
+  font-weight: 500;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--warning-soft);
+  color: var(--warning);
+  letter-spacing: 0.3px;
+}
+.arch-desc {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  line-height: 1.5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

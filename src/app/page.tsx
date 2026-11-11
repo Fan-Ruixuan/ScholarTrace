@@ -370,6 +370,7 @@ export default function Home() {
           kbHits={kbHits}
           activeCitation={activeCitation}
           timelineEvents={timelineEvents}
+          citationCount={citationMap.size}
         />
       </div>
     </div>
