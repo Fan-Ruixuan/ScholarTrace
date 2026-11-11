@@ -693,6 +693,7 @@ code, .mono {
   border-radius: 12px;
   padding: 12px;
   box-shadow: var(--shadow-sm);
+  flex-shrink: 0; /* 面板为纵向 flex，禁止卡片被压缩导致拓扑/架构被裁剪 */
 }
 .topo-section-title {
   font-size: 11px; font-weight: 600;
@@ -723,7 +724,7 @@ code, .mono {
 }
 
 /* ---- 拓扑 SVG ---- */
-.topo-svg { display: block; margin: 0 auto; }
+.topo-svg { display: block; margin: 0 auto; max-width: 100%; height: auto; }
 .topo-node { cursor: default; }
 .topo-node-ring {
   fill: none;
@@ -738,6 +739,12 @@ code, .mono {
 }
 .topo-node-state {
   font-size: 14px; text-anchor: middle; dominant-baseline: central;
+  font-weight: 600; pointer-events: none;
+}
+.topo-spinner {
+  transform-box: view-box;
+  transform-origin: 7px 7px;
+  animation: spin 1s linear infinite;
 }
 .topo-line { stroke-width: 1.5; fill: none; transition: stroke var(--t-slow); }
 .topo-line.active { stroke-width: 2; }

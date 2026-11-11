@@ -388,20 +388,17 @@ function TopologySvg({ agents, timelineEvents, activeCitation }: TopologySvgProp
               <g>
                 {/* 小旋转 icon */}
                 <g transform={`translate(${pos.x - 7}, ${pos.y - 7})`}>
-                  <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+                  <svg className="topo-spinner" width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
                     <path d="M21 12a9 9 0 1 1-6.2-8.55" />
                   </svg>
                 </g>
-                <g style={{ transformOrigin: `${pos.x}px ${pos.y}px`, animation: 'spin 1s linear infinite' }}>
-                  <circle cx={pos.x} cy={pos.y} r={0} />
-                </g>
               </g>
             ) : state.status === 'done' ? (
-              <text className="topo-node-state" fill="#fff">✓</text>
+              <text className="topo-node-state" x={pos.x} y={pos.y} fill="#fff">✓</text>
             ) : state.status === 'error' ? (
-              <text className="topo-node-state" fill="#fff">!</text>
+              <text className="topo-node-state" x={pos.x} y={pos.y} fill="#fff">!</text>
             ) : state.status === 'retry' ? (
-              <text className="topo-node-state" fill="#fff" fontSize={11} dominantBaseline="central">
+              <text className="topo-node-state" x={pos.x} y={pos.y} fill="#fff" fontSize={11} dominantBaseline="central">
                 ↻×{state.retryCount ?? 1}
               </text>
             ) : null}
