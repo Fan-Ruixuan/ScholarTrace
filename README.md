@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # projects
 
 这是一个基于 [Next.js 16](https://nextjs.org) + [shadcn/ui](https://ui.shadcn.com) 的全栈应用项目，由扣子编程 CLI 创建。
@@ -361,3 +362,7 @@ export const useStore = create<Store>((set) => ({
 3. **遵循 Next.js App Router 规范**，正确区分服务端/客户端组件
 4. **使用 TypeScript** 进行类型安全开发
 5. **使用 `@/` 路径别名** 导入模块（已配置）
+=======
+# ScholarTrace
+面向高校实验室的多智能体科研协作平台：文献解析、数据整理、报告生成，全链路文献溯源与合规校验
+>>>>>>> 8384d232e5b23febeee5020a21cb608ebe9384be
