@@ -43,14 +43,14 @@ function CitationMark({
   index: number;
   citationId: string;
   isActive: boolean;
-  onClick: () => void;
+  onClick: (citationId: string, event: React.MouseEvent) => void;
 }) {
   return (
     <span
       className={`citation-mark ${isActive ? 'active' : ''}`}
       onClick={(e) => {
-        e.stopPropagation();
-        onClick();
+        e.stopPropagation?.();
+        onClick(citationId, e);
       }}
       title={`查看来源 [${index}]`}
     >
@@ -246,103 +246,87 @@ export default function MessageList({
     }
   }, [activeCitation]);
 
-  // 渲染Markdown中的引用为可点击标记
+  // 渲染Markdown + 引用标记：按引用模式切片，交替渲染
   const renderContentWithCitations = (content: string, msgId: string) => {
-    // 匹配【来源: doc_id=X, page=Y】或 [n] 方括号引用
-    const parts: React.ReactNode[] = [];
-    let lastIdx = 0;
-    // 先匹配【来源:...】格式
+    // Step 1: 收集所有【来源:...】引用并替换为 %%CIT:n%% 占位符
     const sourceRegex = /【来源:\s*(?:doc_id|文献ID)\s*=\s*([^,，\s】]+)[,，\s]*page[=:\s]*(\d+)】/g;
-    // 匹配已有的 [n] 引用
     const bracketRegex = /\[(\d+)\]/g;
+
+    const msgCitations: Citation[] = [];
+    const usedIds = new Set<string>();
     let citationIdx = 0;
-    const usedCitations = new Set<string>();
 
-    let match;
-    let segmentIdx = 0;
-
-    // 简化：直接把【来源】替换为上标引用标记
-    let processedContent = content;
-    const sourceCitations: { id: string; docId: string; page: string; index: number }[] = [];
-    let sourceMatch;
-    while ((sourceMatch = sourceRegex.exec(content)) !== null) {
-      const docId = sourceMatch[1];
-      const page = sourceMatch[2];
+    let processed = content;
+    let sm;
+    while ((sm = sourceRegex.exec(content)) !== null) {
+      const docId = sm[1], page = sm[2];
       const citId = `${msgId}-${docId}-${page}`;
-      if (!usedCitations.has(citId)) {
-        usedCitations.add(citId);
-        citationIdx++;
-        sourceCitations.push({ id: citId, docId, page, index: citationIdx });
+      if (usedIds.has(citId)) continue;
+      usedIds.add(citId);
+      citationIdx++;
+      msgCitations.push({ id: citId, index: citationIdx, docId, page, snippet: '' });
+      processed = processed.replace(sm[0], `%%CIT:${citationIdx}%%`);
+    }
+    // 如果内容里已有 [n] 格式（模拟返回），也收集
+    let bm;
+    while ((bm = bracketRegex.exec(content)) !== null) {
+      const num = parseInt(bm[1]);
+      if (num > msgCitations.length) {
+        // 补一个空的（模拟数据）
+        const citId = `${msgId}-bracket-${num}`;
+        if (!usedIds.has(citId)) {
+          usedIds.add(citId);
+          msgCitations.push({ id: citId, index: num, docId: `模拟文献${num}`, page: '—', snippet: '' });
+        }
       }
     }
+    // 把残留的 [n] 也换成 %%CIT:n%%
+    processed = processed.replace(bracketRegex, (_, n) => `%%CIT:${n}%%`);
 
-    // 替换【来源...】为 [n]
-    sourceCitations.forEach((sc) => {
-      const regex = new RegExp(`【来源:\\s*(?:doc_id|文献ID)\\s*=\\s*${sc.docId}[,，\\s]*page[=:\\s]*${sc.page}】`, 'g');
-      processedContent = processedContent.replace(regex, `%%CIT:${sc.index}%%`);
-    });
-    processedContent = processedContent.replace(/%%CIT:(\d+)%%/g, '[$1]');
-
-    // 收集消息中的引用
-    const msgCitations: Citation[] = sourceCitations.map(sc => ({
-      id: sc.id,
-      index: sc.index,
-      docId: sc.docId,
-      page: sc.page,
-      snippet: '',
-    }));
-
-    // 基于[n]分拆渲染
-    const renderedParts: React.ReactNode[] = [];
-    let textBuffer = '';
-    let pos = 0;
-    while (pos < processedContent.length) {
-      const bm = processedContent.substring(pos).match(/\[(\d+)\]/);
-      if (!bm) {
-        textBuffer += processedContent.substring(pos);
-        break;
+    // Step 2: 按 %%CIT:n%% 切分
+    const segRegex = /%%CIT:(\d+)%%/g;
+    const segments: React.ReactNode[] = [];
+    let lastIdx = 0;
+    let segIdx = 0;
+    let m;
+    while ((m = segRegex.exec(processed)) !== null) {
+      // 前面的 Markdown 片段
+      if (m.index > lastIdx) {
+        const mdPiece = processed.substring(lastIdx, m.index);
+        segments.push(
+          <ReactMarkdown key={`md-${segIdx++}`} remarkPlugins={[remarkGfm]}>
+            {mdPiece}
+          </ReactMarkdown>
+        );
       }
-      const bmIdx = bm.index!;
-      textBuffer += processedContent.substring(pos, pos + bmIdx);
-      const num = parseInt(bm[1]);
-      const sc = msgCitations.find(c => c.index === num);
-      renderedParts.push(<span key={`t-${segmentIdx++}`}>{textBuffer}</span>);
-      textBuffer = '';
-      if (sc) {
-        renderedParts.push(
+      // CitationMark
+      const num = parseInt(m[1]);
+      const cit = msgCitations.find(c => c.index === num);
+      if (cit) {
+        segments.push(
           <CitationMark
-            key={`c-${segmentIdx++}`}
+            key={`cit-${segIdx++}`}
             index={num}
-            citationId={sc.id}
-            isActive={activeCitation === sc.id}
-            onClick={(e?: any) => {
-              // find nearest span for position
-              const event = window.event as MouseEvent;
-              if (event) handleCitationClick(sc.id, event as any);
-            }}
+            citationId={cit.id}
+            isActive={activeCitation === cit.id}
+            onClick={handleCitationClick}
           />
         );
       }
-      pos = pos + bmIdx + bm[0].length;
+      lastIdx = m.index + m[0].length;
     }
-    if (textBuffer) renderedParts.push(<span key={`t-${segmentIdx++}`}>{textBuffer}</span>);
+    // 最后的 Markdown 片段
+    if (lastIdx < processed.length) {
+      segments.push(
+        <ReactMarkdown key={`md-${segIdx++}`} remarkPlugins={[remarkGfm]}>
+          {processed.substring(lastIdx)}
+        </ReactMarkdown>
+      );
+    }
 
-    // 处理点击事件委托
     return (
       <div>
-        <div
-          onClick={(e) => {
-            const target = e.target as HTMLElement;
-            if (target.classList.contains('citation-mark')) {
-              const citationId = msgCitations.find(c => c.index === parseInt(target.textContent?.replace(/[\[\]]/g, '') || '0'))?.id;
-              if (citationId) handleCitationClick(citationId, e);
-            }
-          }}
-        >
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>
-            {processedContent}
-          </ReactMarkdown>
-        </div>
+        {segments}
 
         {/* 参考文献折叠列表 */}
         {msgCitations.length > 0 && (
@@ -366,7 +350,6 @@ export default function MessageList({
                     key={c.id}
                     className="ref-item"
                     onClick={() => {
-                      // 简单的视觉反馈
                       onCitationClick(activeCitation === c.id ? null : c.id);
                     }}
                   >
